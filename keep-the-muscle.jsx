@@ -137,14 +137,19 @@ const TILE_INFO = {
    generically, which is both the clinically correct call and the thing that serves
    anyone eating much less than usual for any reason — illness, stress, recovery,
    or medication — without narrowing to one drug. */
+// Returns the system prompt as two content blocks so the large, stable ruleset can be
+// prompt-cached (cache_control: ephemeral) while the volatile per-turn status line stays
+// uncached. The static block is everything that only changes when the PROFILE changes
+// (stable across a chat session); the volatile block is TODAY SO FAR, which updates on
+// nearly every message as food is logged — so it's split out and placed last (adjacent to
+// the conversation) to keep the cache prefix identical turn-to-turn.
 function systemPrompt(p, t, meta) {
   const left = (a, b) => Math.max(0, a - b);
   const wk = WORKOUTS[p.equipment] || WORKOUTS.home;
   const trainedThisWeek = (meta.trainHistory || []).filter(Boolean).length;
-  return `You are the Muscle Mindset — Keep the Muscle coach: a low-appetite muscle-protection coach for people eating much less than usual (GLP-1 medication, illness recovery, high stress, or any other cause). MAKE decisions, don't suggest. The job here is preventing UNDER-eating, not preventing overeating. No guilt, ever — appetite loss usually isn't a choice. Keep replies tight, end with ONE next step. No long lectures.
+  const staticPrompt = `You are the Muscle Mindset — Keep the Muscle coach: a low-appetite muscle-protection coach for people eating much less than usual (GLP-1 medication, illness recovery, high stress, or any other cause). MAKE decisions, don't suggest. The job here is preventing UNDER-eating, not preventing overeating. No guilt, ever — appetite loss usually isn't a choice. Keep replies tight, end with ONE next step. No long lectures.
 
 USER PROFILE: ${p.sex}, ${p.weightLbs} lb${p.bf ? ` at ${p.bf}% body fat (${p.leanLbs} lb lean mass — targets built off this)` : " (body fat % unknown — targets built off total weight)"}, appetite lately: ${p.appetite}. Targets: ${p.calories} cal, ${p.protein}g protein, ${p.carbs}g carbs, ${p.fat}g fat, ${p.waterGoal}oz water. Training access: ${p.equipment}. Restrictions: ${p.restrictions || "none"}.
-TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Trained today: ${t.lifted ? "yes" : "not yet"}. Trained this week: ${trainedThisWeek}/7 days tracked. Minerals today: ${t.vitamin ? "taken" : "not yet"}.
 
 TRAINING — simple muscle-protection programming, no phases/seasons/periodization:
 Full session (${p.equipment}): ${wk.full.join("; ")}.
@@ -185,6 +190,13 @@ If multiple foods are logged in one message, put EACH as its own entry in "logs"
 CRITICAL OUTPUT RULE: your entire response must be ONE valid JSON object and NOTHING else — no markdown, no text before or after. Respond ONLY with this exact shape:
 {"reply":"<coach message, tight, 2-4 sentences max, one next step>","logs":[{"name":"<short>","cal":<int>,"protein":<int>,"carbs":<int>,"fat":<int>,"verdict":"good"|"caution"|"bad"}]}
 (Always an array, even for one item. Use "logs": [] if nothing was eaten this turn — e.g. workout requests, check-ins, general questions.)`;
+
+  const volatilePrompt = `TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Trained today: ${t.lifted ? "yes" : "not yet"}. Trained this week: ${trainedThisWeek}/7 days tracked. Minerals today: ${t.vitamin ? "taken" : "not yet"}.`;
+
+  return [
+    { type: "text", text: staticPrompt, cache_control: { type: "ephemeral" } },
+    { type: "text", text: volatilePrompt },
+  ];
 }
 
 /* ---------------- pre-eat scan prompt ----------------
@@ -815,7 +827,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   const callCoach = async (apiMessages, t) => {
     const res = await fetch("/api/coach", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt(profile, t, { protectionDaysLeft, trainHistory }), messages: apiMessages, tools: [{ type: "web_search_20250305", name: "web_search" }] }),
+      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt(profile, t, { protectionDaysLeft, trainHistory }), messages: apiMessages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
     });
     if (!res.ok) {
       let detail = "";
@@ -1117,7 +1129,7 @@ function ScanModal({ profile, today, onClose, onLog, systemPromptFn }) {
     try {
       const res = await fetch("/api/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: sys, messages, tools: [{ type: "web_search_20250305", name: "web_search" }] }),
+        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: sys, messages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
