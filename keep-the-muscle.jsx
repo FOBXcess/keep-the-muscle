@@ -121,7 +121,6 @@ const WORKOUTS = {
 const TILE_INFO = {
   calories: { label: "CALORIES", text: "Total calories vs. your daily target. The number is set high on purpose — near maintenance with no diet-style cut, since the deficit here already comes from low appetite. It's a ceiling to grow toward, not a bar to clear today, so the tile lights green once you're halfway there. Going over is never the issue; sustained under-eating is — which is why a warning shows if you drop below the clinical daily floor (1,500 cal men / 1,200 cal women)." },
   protein: { label: "PROTEIN", text: "Protein is the signal that matters most — it's what actually protects muscle during any deficit, appetite-driven or not. The tile lights green only at 100% of your target, because protein is the one number worth fully hitting. Coming up short here is the real muscle-loss risk, not the calorie count." },
-  train: { label: "TRAIN", text: "A resistance session completed today — full or minimum-dose, both count fully. This tracks training specifically, not steps or general movement." },
   hydrate: { label: "HYDRATE", text: "Water plus minerals, together — the daily recovery basics for this population. Appetite loss quiets thirst the same way it quiets hunger, so reduced intake itself drives dehydration, not just sweat. The tile lights green when you've hit your water goal AND logged your minerals (a multivitamin and/or an electrolyte mix). A pinch of salt in water counts." },
   water: { label: "WATER", text: "Electrolytes are worth pairing with water daily here — appetite loss quiets thirst the same way it quiets hunger, so reduced intake itself is often the driver, not just sweat losses. A basic electrolyte mix, or a pinch of salt in water, helps." },
   minerals: { label: "MINERALS", text: "One daily tap covering a multivitamin and/or electrolytes — insurance against the gaps most likely to open up when food variety drops on reduced intake: B12, iron, vitamin D, magnesium, plus the sodium and potassium electrolytes carry. A basic complete multivitamin plus an electrolyte mix (or a pinch of salt in water) covers most of this. Check with a doctor before adding anything beyond that." },
@@ -146,7 +145,6 @@ const TILE_INFO = {
 function systemPrompt(p, t, meta) {
   const left = (a, b) => Math.max(0, a - b);
   const wk = WORKOUTS[p.equipment] || WORKOUTS.home;
-  const trainedThisWeek = (meta.trainHistory || []).filter(Boolean).length;
   const staticPrompt = `You are the Muscle Mindset — Keep the Muscle coach: a low-appetite muscle-protection coach for people eating much less than usual (GLP-1 medication, illness recovery, high stress, or any other cause). MAKE decisions, don't suggest. The job here is preventing UNDER-eating, not preventing overeating. No guilt, ever — appetite loss usually isn't a choice. Keep replies tight, end with ONE next step. No long lectures.
 
 USER PROFILE: ${p.sex}, ${p.weightLbs} lb${p.bf ? ` at ${p.bf}% body fat (${p.leanLbs} lb lean mass — targets built off this)` : " (body fat % unknown — targets built off total weight)"}, appetite lately: ${p.appetite}. Targets: ${p.calories} cal, ${p.protein}g protein, ${p.carbs}g carbs, ${p.fat}g fat, ${p.waterGoal}oz water. Training access: ${p.equipment}. Restrictions: ${p.restrictions || "none"}.
@@ -170,10 +168,9 @@ RULES:
 - NO drug-specific interaction warnings (e.g. "this interacts with your specific medication"). Generic disclaimers are fine and expected: "check with a doctor before starting any new supplement, especially if on prescription medication."
 - RED-FLAG SAFETY LIST (if any of these come up, however phrased): persistent vomiting, can't keep fluids down, rapid unexplained weight loss, fainting, chest pain, severe weakness, blood in stool or vomit, or appetite loss lasting more than 1-2 weeks. If any appear, that turn's reply should clearly and calmly say this needs a doctor's attention, ahead of any other coaching in that message. Frame it as the general safety advice anyone would get for these symptoms — not as managing a medication's side effects.
 - WEEKLY TRENDS over single-day numbers: weight, energy, and appetite all fluctuate day to day. What matters is the direction over 1-2 weeks. If weight is dropping fast (roughly more than 1% of bodyweight per week), say so plainly and connect it to protein — faster loss with low protein intake is a faster route to losing muscle, not just fat. If they've logged body fat % alongside weight at least twice, 10+ days apart, that's the more direct signal — it can show whether the loss is actually fat or muscle, not just a proxy for it. Either way, never react to a single reading: home body-fat scales swing several percent just from hydration and time of day, so one weird number isn't a trend. If they ask about a single jump, say so plainly rather than reading meaning into noise.
-${meta.protectionDaysLeft ? `\nMUSCLE PROTECTION MODE IS CURRENTLY ACTIVE: ${meta.protectionDaysLeft} clean day(s) left. Reinforce this if relevant — today specifically needs protein at floor, calories at floor, hydration hit, and a training session (full or minimum dose), or the clock restarts.` : ""}
+${meta.protectionDaysLeft ? `\nMUSCLE PROTECTION MODE IS CURRENTLY ACTIVE: ${meta.protectionDaysLeft} clean day(s) left. Reinforce this if relevant — today specifically needs protein at floor, calories at floor, and hydration hit, or the clock restarts.` : ""}
 - CALORIES TILE LOGIC (use these exact numbers if asked why it's lit/not lit/warning — never invent different thresholds): GREEN/lit = calories at or above 50% of target (the target runs high on purpose, so half of it is already a solid day). RED/warning = at least 30% of the calorie target logged AND total calories still under the clinical daily floor (${p.sex === "male" ? 1500 : 1200} cal for this user) — the tile's concern is under-eating, never overeating.
 - PROTEIN TILE LOGIC: GREEN/lit = protein at 100% of target — protein is the one number worth fully hitting, so nothing less lights it. RED/at-risk = at least 30% of the calorie target logged AND protein still under 50% of target; that's the real muscle-loss signal.
-- TRAIN TILE LOGIC: GREEN/lit = a resistance session (full or minimum dose) completed today. Nothing else lights this one up — this tile is specifically about resistance work, not steps or general movement.
 - HYDRATE TILE LOGIC: a TODAY signal combining water and minerals. GREEN/lit = the water goal (${p.waterGoal}oz) is hit AND minerals are logged for the day (a multivitamin and/or electrolytes). Otherwise it stays unlit — there's no red state on this tile. Longer-run patterns (several days of low hydration, or an unsafe loss rate) don't show here; they feed Muscle Protection Mode instead — the loss-rate check uses body-fat-tagged weigh-ins (lean mass directly) when at least two exist 10+ days apart, otherwise it falls back to weight alone. Raise those trends in a check-in, not as a tile explanation.
 - Commands you handle: "eat this now" / "what should I eat" (rank by protein-per-bite, favor soft/liquid if appetite's low), "meal plan" (a few small protein-anchored meals/snacks for the day), "give me a workout" (use the session library above, full or minimum), "GI help" (the non-diagnostic guidance above), "check in" (ask how appetite/energy/training are trending over the week, not the day).
 
@@ -191,7 +188,7 @@ CRITICAL OUTPUT RULE: your entire response must be ONE valid JSON object and NOT
 {"reply":"<coach message, tight, 2-4 sentences max, one next step>","logs":[{"name":"<short>","cal":<int>,"protein":<int>,"carbs":<int>,"fat":<int>,"verdict":"good"|"caution"|"bad"}]}
 (Always an array, even for one item. Use "logs": [] if nothing was eaten this turn — e.g. workout requests, check-ins, general questions.)`;
 
-  const volatilePrompt = `TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Trained today: ${t.lifted ? "yes" : "not yet"}. Trained this week: ${trainedThisWeek}/7 days tracked. Minerals today: ${t.vitamin ? "taken" : "not yet"}.`;
+  const volatilePrompt = `TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Minerals today: ${t.vitamin ? "taken" : "not yet"}.`;
 
   return [
     { type: "text", text: staticPrompt, cache_control: { type: "ephemeral" } },
@@ -211,7 +208,7 @@ function scanSystemPrompt(p, t) {
 
 DO NOT LOG THIS FOOD. Return "logs": [] always. This is a preview only.
 
-USER'S DAY SO FAR: ${t.cal} cal eaten (${calLeft > 0 ? calLeft + " to go toward the floor" : "floor reached — going over is never the issue here"}), ${t.protein}g protein (${proteinLeft > 0 ? proteinLeft + "g still needed" : "protein floor hit ✅"}), trained today: ${t.lifted ? "yes" : "not yet"}, water: ${t.water || 0}/${p.waterGoal}oz.
+USER'S DAY SO FAR: ${t.cal} cal eaten (${calLeft > 0 ? calLeft + " to go toward the floor" : "floor reached — going over is never the issue here"}), ${t.protein}g protein (${proteinLeft > 0 ? proteinLeft + "g still needed" : "protein floor hit ✅"}), water: ${t.water || 0}/${p.waterGoal}oz.
 USER TARGETS: ${p.calories} cal, ${p.protein}g protein, ${p.carbs}g carbs, ${p.fat}g fat. Appetite lately: ${p.appetite}.
 Remember: the calorie number is a protective floor, not a ceiling — there is no "over budget" state to warn about here. The only thing worth flagging is whether this food meaningfully helps close the protein gap, especially given appetite is the bottleneck, not calories.
 
@@ -469,7 +466,7 @@ function gradeDay(day, profile, meta, finalize) {
   if (finalize) {
     newUnderEatDays = underEatToday ? (meta.underEatDays || 0) + 1 : 0;
     if (inProtectionMode) {
-      const cleanDay = feedHit && trainHit && waterHit;
+      const cleanDay = feedHit && waterHit;
       newProtectionDaysLeft = cleanDay ? (meta.protectionDaysLeft || 0) - 1 : 3; // any missed day restarts the clock
       newUnderEatDays = 0;
     } else if (newUnderEatDays >= 2) {
@@ -478,7 +475,7 @@ function gradeDay(day, profile, meta, finalize) {
     newTrainHistory = [...(meta.trainHistory || []), trainHit].slice(-7);
     newWaterHistory = [...(meta.waterHistory || []), waterHit].slice(-7);
     newVitaminHistory = [...(meta.vitaminHistory || []), !!day.vitamin].slice(-7);
-    newStreak = feedHit && trainHit && !inProtectionMode && !justTriggered
+    newStreak = feedHit && !inProtectionMode && !justTriggered
       ? (meta.streak || 0) + 1
       : (inProtectionMode || justTriggered ? 0 : (meta.streak || 0));
   }
@@ -494,20 +491,19 @@ function gradeDay(day, profile, meta, finalize) {
 
   const when = finalize ? "Tomorrow" : "From here";
   let fix;
-  if (justTriggered) fix = "You're not eating enough to protect the body you're trying to build. Muscle Protection Mode starts now: each day gets graded — protein at floor, calories at floor, hydration hit, a training session done. Miss any piece on any day and the 3-day count restarts. No tricks, just the floor, enforced.";
+  if (justTriggered) fix = "You're not eating enough to protect the body you're trying to build. Muscle Protection Mode starts now: each day gets graded — protein at floor, calories at floor, hydration hit. Miss any piece on any day and the 3-day count restarts. No tricks, just the floor, enforced.";
   else if (inProtectionMode) {
-    const cleanDay = feedHit && trainHit && waterHit;
+    const cleanDay = feedHit && waterHit;
     fix = cleanDay
       ? (finalize ? `Clean Protection day. ${newProtectionDaysLeft} more to go and you're out.` : `On track for a clean Protection day — hold it and that's ${newProtectionDaysLeft} to go.`)
-      : `Protection day ${finalize ? "missed" : "at risk"} (${(!feedHit) ? "floor not hit, " : ""}${!trainHit ? "no training yet, " : ""}${!waterHit ? "hydration light" : ""}) — ${finalize ? "the 3-day clock restarts from here. Same floor tomorrow, no shortcuts." : "close these out before the day ends to keep the clock moving."}`;
+      : `Protection day ${finalize ? "missed" : "at risk"} (${(!feedHit) ? "floor not hit, " : ""}${!waterHit ? "hydration light" : ""}) — ${finalize ? "the 3-day clock restarts from here. Same floor tomorrow, no shortcuts." : "close these out before the day ends to keep the clock moving."}`;
   }
-  else if (compositionConcern && hasRecentBfTrend) fix = `The body-fat trend shows real muscle loss alongside the weight, not just fat. That's exactly what this app is meant to catch. ${when}: protein at floor is non-negotiable, and don't skip the training session.`;
-  else if (compositionConcern) fix = `Weight's coming off faster than is safe for muscle right now. That's not extra progress, that's a faster route to losing muscle along with fat. ${when}: protein at floor is non-negotiable, and don't skip the training session.`;
+  else if (compositionConcern && hasRecentBfTrend) fix = `The body-fat trend shows real muscle loss alongside the weight, not just fat. That's exactly what this app is meant to catch. ${when}: protein at floor is non-negotiable.`;
+  else if (compositionConcern) fix = `Weight's coming off faster than is safe for muscle right now. That's not extra progress, that's a faster route to losing muscle along with fat. ${when}: protein at floor is non-negotiable.`;
   else if (chronicHydrationRisk) fix = `Hydration's been light for several days running, not just today — that adds up. ${when}: water and electrolytes first thing, before anything else.`;
   else if (!feedHit) fix = day.protein < profile.protein * 0.85 ? `${when}: protein first — a shake or Greek yogurt closes the gap fast without needing a full plate.` : `${when}: a little more food overall, small and frequent rather than one big meal.`;
-  else if (!trainHit) fix = `${when}: even the minimum-dose session counts. 10 minutes protects more muscle than zero.`;
   else if (!waterHit) fix = `Water's light — ${Math.round(day.water || 0)}/${profile.waterGoal}oz. Appetite loss quiets thirst too, not just hunger. ${when}: electrolytes alongside water, front-loaded before noon.`;
-  else fix = finalize ? "All three tiles lit up today! You nourished your body, protected your muscle, and stayed hydrated. Let's do it again tomorrow." : "All three tiles are lit — you're nailing it. Keep it right here through the rest of the day.";
+  else fix = finalize ? "Protein floor hit and hydration locked in — you protected your muscle today. Let's do it again tomorrow." : "Protein and hydration are both on track — you're nailing it. Keep it right here through the rest of the day.";
 
   const newMeta = { streak: newStreak, underEatDays: newUnderEatDays, protectionDaysLeft: newProtectionDaysLeft, trainHistory: newTrainHistory, waterHistory: newWaterHistory, vitaminHistory: newVitaminHistory };
   return { data, fix, newMeta };
@@ -734,11 +730,6 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   const proteinLit = today.protein >= profile.protein;
   const proteinAtRisk = !proteinLit && hasMeaningfulData && today.protein < profile.protein * 0.5;
 
-  // TRAIN — binary, resistance work only. No red state of its own; sustained misses
-  // feed into Muscle Protection Mode instead, not a pulsing tile every day you skip one.
-  const trainLit = today.lifted;
-  const trainedThisWeek = trainHistory.filter(Boolean).length;
-
   // Chronic hydration shortfall — Protect is supposed to watch "eating, hydrating, and
   // recovering" as a trend, not just today's number (that's what the Water adjuster tile
   // already covers). Needs at least 3 tracked days before judging (grace period, same
@@ -925,7 +916,6 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   };
 
   const setVal = (patch) => saveToday({ ...today, ...patch });
-  const toggleLift = () => saveToday({ ...today, lifted: !today.lifted });
   const toggleVitamin = () => saveToday({ ...today, vitamin: !today.vitamin });
 
   return (
@@ -942,7 +932,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
         )}
         {protectionDaysLeft > 0 && (
           <p style={{ fontSize: 11.5, color: "var(--stop)", margin: "0 0 8px", lineHeight: 1.4, fontWeight: 700, background: "rgba(240,96,77,.12)", border: "1px solid var(--stop)", borderRadius: 8, padding: "7px 10px" }}>
-            🛡️ MUSCLE PROTECTION MODE — {protectionDaysLeft} clean day{protectionDaysLeft === 1 ? "" : "s"} left. Today needs: protein at floor, calories at floor, hydration hit, a training session done. Miss any piece and the clock restarts.
+            🛡️ MUSCLE PROTECTION MODE — {protectionDaysLeft} clean day{protectionDaysLeft === 1 ? "" : "s"} left. Today needs: protein at floor, calories at floor, hydration hit. Miss any piece and the clock restarts.
           </p>
         )}
         {showInfo && (
@@ -978,7 +968,6 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
           </p>
         )}
         <div className="sigrow">
-          <button className={`sig ${trainLit ? "lit-go" : ""}`} onClick={toggleLift}><span className="sl">Train</span><span className="sv">{today.lifted ? "✅" : "⬜"}</span></button>
           <div className={`sig ${today.vitamin ? "lit-go" : ""}`} onClick={toggleVitamin}>
             <button className="ibadge" onClick={toggleExplain("minerals")}>ⓘ</button>
             <span className="sl">Minerals</span><span className="sv">{today.vitamin ? "✅" : "⬜"}</span>
@@ -1575,7 +1564,6 @@ function ScoreCard({ d, fix }) {
       <div className="sg" style={{ fontWeight: 600, letterSpacing: ".1em", marginBottom: 8 }}>{d.title || `DAY ${d.day} CLOSED`}</div>
       <div className="scorecard">
         <Row lab="Feed" v={d.feedHit ? "✅ Floor hit" : "⚠️ Under floor"} color={d.feedHit ? "var(--go)" : "var(--stop)"} />
-        <Row lab="Train" v={d.trainHit ? "✅ Session done" : "⬜ Skipped"} color={d.trainHit ? "var(--go)" : "var(--hold)"} />
         <Row lab="Protect" v={d.inProtectionMode ? "🛡️ Protection Mode" : d.compositionConcern ? (d.hasRecentBfTrend ? "⚠️ Losing muscle" : "⚠️ Loss too fast") : d.chronicHydrationRisk ? "⚠️ Hydration behind" : "✅ On track"} color={d.inProtectionMode || d.compositionConcern || d.chronicHydrationRisk ? "var(--stop)" : "var(--go)"} />
         <Row lab="Water" v={d.waterHit ? `💧 ${d.water}/${d.waterGoal}oz — hit it` : `💧 ${d.water}/${d.waterGoal}oz — light`} color={d.waterHit ? "var(--go)" : "var(--hold)"} />
         <Row lab="Vitamin" v={d.vitaminHit ? "✅ Taken" : "⬜ Skipped"} color={d.vitaminHit ? "var(--go)" : "var(--faint)"} />
