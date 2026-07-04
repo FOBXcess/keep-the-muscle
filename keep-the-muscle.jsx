@@ -1093,14 +1093,14 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
 
       <div className="foot">
         <div className="qa">
-          {["Eat this now", "Meal plan", "Give me a workout", "GI help", "Check in"].map((q) => (
-            <button key={q} onClick={() => send(q)} disabled={busy}>{q}</button>
-          ))}
           <button onClick={() => setScanOpen(true)} disabled={busy} style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🔍 Scan before eating</button>
           {today.items && today.items.length > 0 && (
             <button onClick={undoLast} disabled={busy} style={{ borderColor: "var(--hold)", color: "var(--hold)" }}>↩ Undo last log</button>
           )}
           <button onClick={gradeToday} disabled={busy} style={{ borderColor: "var(--go)", color: "var(--go)" }}>Grade my day</button>
+          {["Eat this now", "Meal plan", "Give me a workout", "GI help", "Check in"].map((q) => (
+            <button key={q} onClick={() => send(q)} disabled={busy}>{q}</button>
+          ))}
         </div>
         <div className="inrow">
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
