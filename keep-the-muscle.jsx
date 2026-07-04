@@ -16,6 +16,42 @@ const r5 = (n) => Math.round(n / 5) * 5;
 const r10 = (n) => Math.round(n / 10) * 10;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
+// Pick a food emoji for a favorite chip from keywords in its name; generic muscle fallback.
+function foodEmoji(name) {
+  const n = (name || "").toLowerCase();
+  const map = [["egg", "🍳"], ["chicken", "🍗"], ["turkey", "🦃"], ["steak", "🥩"], ["beef", "🥩"], ["burger", "🍔"], ["bacon", "🥓"], ["salmon", "🐟"], ["tuna", "🐟"], ["fish", "🐟"], ["shrimp", "🦐"], ["rice", "🍚"], ["oat", "🥣"], ["yogurt", "🥛"], ["milk", "🥛"], ["whey", "🥤"], ["shake", "🥤"], ["protein", "🥤"], ["broth", "🍲"], ["soup", "🍲"], ["banana", "🍌"], ["apple", "🍎"], ["berr", "🫐"], ["avocado", "🥑"], ["salad", "🥗"], ["peanut", "🥜"], ["almond", "🥜"], ["nut", "🥜"], ["cheese", "🧀"], ["bread", "🍞"], ["potato", "🥔"], ["coffee", "☕"], ["pasta", "🍝"], ["chocolate", "🍫"]];
+  for (const [k, e] of map) if (n.includes(k)) return e;
+  return "💪";
+}
+
+// Roll a set of logged food items into the persisted favorites tally (latest macros win, count increments).
+function mergeFavorites(prev, items) {
+  const next = { ...(prev || {}) };
+  for (const it of items || []) {
+    if (!it || !it.name || (!it.cal && !it.protein)) continue;
+    const key = it.name.trim().toLowerCase();
+    if (!key) continue;
+    const was = next[key];
+    next[key] = {
+      name: it.name.trim(),
+      cal: it.cal || 0, protein: it.protein || 0, carbs: it.carbs || 0, fat: it.fat || 0,
+      verdict: it.verdict || (was && was.verdict) || null,
+      count: (was ? was.count : 0) + 1,
+      last: todayKey(),
+    };
+  }
+  return next;
+}
+
+// From the tally, surface the genuine favorites: logged 3+ times, most-used first, cap the list.
+const FAV_THRESHOLD = 3;
+function topFavorites(fav, limit = 6) {
+  return Object.values(fav || {})
+    .filter((f) => f.count >= FAV_THRESHOLD)
+    .sort((a, b) => b.count - a.count || (b.last || "").localeCompare(a.last || ""))
+    .slice(0, limit);
+}
+
 // downscale a photo so it's fast to send and small enough to persist
 function fileToImg(file, max = 768, q = 0.72) {
   return new Promise((resolve, reject) => {
@@ -242,7 +278,8 @@ const CSS = `
 :root{--ink:#15120E;--raise:#211C16;--card:#28221B;--line:#3A322A;--txt:#F6F1E7;--muted:#A99F8E;--faint:#6F665A;
 --go:#8BE05A;--hold:#F2B33D;--stop:#F0604D;--water:#56C7F0;--carb:#C79BF2;--fat:#F2A65A;--gold:#D4AF37;}
 *{box-sizing:border-box;}
-.mm{font-family:'Inter',system-ui,sans-serif;background:var(--ink);color:var(--txt);height:100dvh;display:flex;flex-direction:column;}
+html,body{overflow:hidden;overscroll-behavior:none;}
+.mm{font-family:'Inter',system-ui,sans-serif;background:var(--ink);color:var(--txt);height:100dvh;height:100svh;overflow:hidden;position:relative;display:flex;flex-direction:column;}
 .sg{font-family:'Space Grotesk',sans-serif;}
 .scroll{padding:16px;overflow-y:auto;flex:1 1 auto;}
 .scroll.center{display:flex;flex-direction:column;justify-content:center;max-width:560px;margin:0 auto;width:100%;}
@@ -264,8 +301,16 @@ label.fl{display:block;font-size:13px;color:var(--muted);margin:16px 0 7px;font-
 .btn.go:disabled{opacity:.4;cursor:not-allowed;}
 .gate{font-size:12.5px;color:var(--hold);margin-top:10px;line-height:1.45;}
 /* dashboard (pinned) */
-.dash{flex:0 0 auto;background:var(--card);border-bottom:1px solid var(--line);padding:12px 14px 14px;}
-.dhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;}
+.dash{flex:0 0 auto;background:var(--card);border-bottom:1px solid var(--line);padding:calc(12px + env(safe-area-inset-top)) 14px 14px;}
+.dhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;}
+.favbar{flex:0 0 auto;display:flex;align-items:center;gap:7px;background:var(--ink);border-bottom:1px solid var(--line);padding:8px 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.favbar::-webkit-scrollbar{display:none;}
+.favlbl{flex:0 0 auto;font-family:'Space Grotesk';font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;}
+.favchip{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--txt);font-size:12.5px;font-weight:600;font-family:'Inter';cursor:pointer;white-space:nowrap;transition:.15s;}
+.favchip:hover{border-color:var(--go);color:#fff;}
+.favchip:active{transform:scale(.94);}
+.favchip:disabled{opacity:.4;cursor:not-allowed;}
+.favchip .fp{color:var(--go);font-family:'Space Grotesk';font-weight:700;font-size:11px;}
 .dhead .lg{font-family:'Space Grotesk';font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);white-space:nowrap;}
 .dhead .lg .gold{color:var(--gold);}
 .streak{font-size:12px;color:var(--hold);font-weight:600;font-family:'Space Grotesk';white-space:nowrap;}
@@ -523,6 +568,7 @@ export default function App({ store: injectedStore } = {}) {
   const [weightLogs, setWeightLogs] = useState([]);
   const [lastActiveDate, setLastActiveDate] = useState(null);
   const [finalizedDate, setFinalizedDate] = useState(null);
+  const [favorites, setFavorites] = useState({});
 
   useEffect(() => {
     (async () => {
@@ -530,7 +576,9 @@ export default function App({ store: injectedStore } = {}) {
       const todayStr = todayKey();
       const t = await store.get("ktm:today:" + todayStr);
       let m = (await store.get("ktm:meta")) || {};
+      const f = await store.get("ktm:favorites");
       if (p) setProfile(p);
+      if (f) setFavorites(f);
 
       // ---- DAY ROLLOVER ----
       // The streak/history is now banked automatically when the calendar day ends, not on a
@@ -611,6 +659,13 @@ export default function App({ store: injectedStore } = {}) {
     });
   };
 
+  // Every logged food nudges the favorites tally; once something crosses the threshold it
+  // becomes a one-tap quick-log chip. Aggregates across days automatically, no user action.
+  const recordFavorites = (items) => {
+    if (!items || !items.length) return;
+    setFavorites((prev) => { const next = mergeFavorites(prev, items); store.set("ktm:favorites", next); return next; });
+  };
+
   const saveMeta = (next) => {
     const merged = { streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, lastActiveDate, finalizedDate, ...next };
     setStreak(merged.streak); setUnderEatDays(merged.underEatDays); setProtectionDaysLeft(merged.protectionDaysLeft);
@@ -645,7 +700,7 @@ export default function App({ store: injectedStore } = {}) {
     </div>
   );
 
-  return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
+  return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
 }
 
 /* ---------------- ONBOARDING (gate) ---------------- */
@@ -701,7 +756,7 @@ function Onboarding({ onDone }) {
 }
 
 /* ---------------- COACH (pinned dash + chat) ---------------- */
-function Coach({ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, resetProfile }) {
+function Coach({ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile }) {
   const [input, setInput] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [expandedTile, setExpandedTile] = useState(null);
@@ -804,6 +859,23 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
     ? Math.max(1, Math.round((new Date(todayKey()) - new Date(profile.startDate)) / 86400000) + 1)
     : 1;
 
+  const favs = topFavorites(favorites);
+
+  // One-tap re-log of a favorite: pure replay of the exact numbers last logged for that food —
+  // no AI call, no estimate, so it can't invent a portion. Accuracy is preserved by construction.
+  const quickLog = (f) => {
+    if (busy) return;
+    const l = { name: f.name, cal: f.cal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fat: f.fat || 0, verdict: f.verdict || null };
+    const nt = {
+      ...today,
+      cal: today.cal + l.cal, protein: today.protein + l.protein, carbs: today.carbs + l.carbs, fat: today.fat + l.fat,
+      items: [...today.items, l],
+      messages: [...(today.messages || []), { role: "c", text: `Logged ${l.name} again — ${l.protein}g protein, ${l.cal} cal added.`, logged: `+${l.protein}g protein · ${l.cal} cal logged`, verdict: l.verdict }],
+    };
+    saveToday(nt);
+    recordFavorites([l]);
+  };
+
   const push = (m, t) => { const nt = { ...t, messages: [...(t.messages || []), m] }; saveToday(nt); return nt; };
 
   const histFrom = (t, dropLast) => {
@@ -818,7 +890,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   const callCoach = async (apiMessages, t) => {
     const res = await fetch("/api/coach", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt(profile, t, { protectionDaysLeft, trainHistory }), messages: apiMessages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
+      body: JSON.stringify({ kind: "coach", model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt(profile, t, { protectionDaysLeft, trainHistory }), messages: apiMessages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
     });
     if (!res.ok) {
       let detail = "";
@@ -876,6 +948,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
       verdict: combinedVerdict,
     }] };
     saveToday(nt);
+    recordFavorites(logs);
   };
 
   const send = async (raw) => {
@@ -991,6 +1064,18 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
         <WeightLog logs={weightLogs} onLog={logWeight} toggleExplain={toggleExplain} />
       </div>
 
+      {favs.length > 0 && (
+        <div className="favbar">
+          <span className="favlbl">⚡ Quick&nbsp;log</span>
+          {favs.map((f) => (
+            <button key={f.name} className="favchip" onClick={() => quickLog(f)} disabled={busy}
+              title={`${f.name} · ${f.cal} cal · logged ${f.count}×`}>
+              <span>{foodEmoji(f.name)}</span><span>{f.name}</span><span className="fp">{f.protein}p</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="scroll" ref={scrollRef}>
         {msgs.map((m, i) => m.role === "score" ? <ScoreCard key={i} d={m.data} fix={m.fix} /> : (
           <div className={`msg ${m.role}`} key={i}>
@@ -1046,6 +1131,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
               messages: [...(today.messages || []), { role: "c", text: `Logged ${l.name} — ${l.protein}g protein, ${l.cal} cal added to today.`, logged: `+${l.protein}g protein · ${l.cal} cal logged`, verdict: l.verdict }],
             };
             saveToday(nt);
+            recordFavorites([l]);
             setScanOpen(false);
           }}
           systemPromptFn={scanSystemPrompt}
@@ -1118,7 +1204,7 @@ function ScanModal({ profile, today, onClose, onLog, systemPromptFn }) {
     try {
       const res = await fetch("/api/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: sys, messages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
+        body: JSON.stringify({ kind: "scan", model: "claude-sonnet-4-6", max_tokens: 1000, system: sys, messages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();

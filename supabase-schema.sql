@@ -66,3 +66,40 @@ create table if not exists user_meta (
 alter table user_meta enable row level security;
 create policy "users manage own meta" on user_meta
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+
+-- Favorites: one JSON blob per user, the quick-log tally aggregated across days.
+-- Keyed by normalized food name -> { name, cal, protein, carbs, fat, verdict, count, last }.
+create table if not exists ktm_favorites (
+  user_id uuid references auth.users primary key,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz default now()
+);
+
+alter table ktm_favorites enable row level security;
+create policy "users manage own ktm favorites" on ktm_favorites
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+
+-- API usage log: one row per Anthropic call, for tracking real token spend + cost.
+-- Written server-side from /api/coach after each request. est_cost_usd uses the
+-- Sonnet 4.6 prices hard-coded in that route (update both together if pricing changes).
+create table if not exists api_usage (
+  id bigint generated always as identity primary key,
+  user_id uuid references auth.users on delete set null,
+  kind text,                       -- 'coach' | 'scan'
+  model text,
+  input_tokens integer default 0,
+  output_tokens integer default 0,
+  cache_read_tokens integer default 0,
+  cache_write_tokens integer default 0,
+  web_searches integer default 0,
+  est_cost_usd numeric(10,6) default 0,
+  created_at timestamptz default now()
+);
+
+alter table api_usage enable row level security;
+create policy "users read own api usage" on api_usage
+  for select using (auth.uid() = user_id);
+create policy "users insert own api usage" on api_usage
+  for insert with check (auth.uid() = user_id);

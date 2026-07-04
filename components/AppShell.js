@@ -83,6 +83,15 @@ function makeStore(supabase, userId) {
         };
       }
 
+      if (key === "ktm:favorites") {
+        const { data } = await supabase
+          .from("ktm_favorites")
+          .select("data")
+          .eq("user_id", userId)
+          .single();
+        return data?.data || null;
+      }
+
       return null;
     },
 
@@ -144,6 +153,15 @@ function makeStore(supabase, userId) {
           water_history: value.waterHistory || [],
           vitamin_history: value.vitaminHistory || [],
           weight_logs: value.weightLogs || [],
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return;
+      }
+
+      if (key === "ktm:favorites") {
+        await supabase.from("ktm_favorites").upsert({
+          user_id: userId,
+          data: value || {},
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
       }

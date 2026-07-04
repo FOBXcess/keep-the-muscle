@@ -17,12 +17,31 @@ export const metadata = {
 
 export const viewport = {
   themeColor: "#0C0A07",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, padding: 0 }}>{children}</body>
+      <body
+        style={{
+          margin: 0,
+          padding: 0,
+          overflow: "hidden",
+          position: "fixed",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          overscrollBehavior: "none",
+          background: "#15120E",
+        }}
+      >
+        {children}
+      </body>
     </html>
   );
 }
