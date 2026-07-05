@@ -165,6 +165,7 @@ const TILE_INFO = {
   water: { label: "WATER", text: "Electrolytes are worth pairing with water daily here — appetite loss quiets thirst the same way it quiets hunger, so reduced intake itself is often the driver, not just sweat losses. A basic electrolyte mix, or a pinch of salt in water, helps." },
   minerals: { label: "MINERALS", text: "One daily tap covering a multivitamin and/or electrolytes — insurance against the gaps most likely to open up when food variety drops on reduced intake: B12, iron, vitamin D, magnesium, plus the sodium and potassium electrolytes carry. A basic complete multivitamin plus an electrolyte mix (or a pinch of salt in water) covers most of this. Check with a doctor before adding anything beyond that." },
   weight: { label: "WEIGHT + BODY FAT", text: "Body fat % alongside weight (if you have a way to measure it) lets this tell fat loss apart from muscle loss — the actual question this app exists to answer. Home scales are noisy day to day — hydration, time of day, and recent food all shift the number more than real change does — so weekly, same time of day, beats daily. Don't react to a single reading; the trend over 2+ weeks is what's real." },
+  trained: { label: "TRAINED", text: "One tap on any day you lifted — and the key word is HEAVY. Lifting challenging weight is the signal that tells your body to hold onto muscle while the weight comes down; light, easy reps don't send it. Protein gives your body the material, but heavy training gives it the reason to keep the muscle. This isn't a rep tracker and there's no target to hit — it just flags the day so the coach knows you put in the real work. Aim for 2–4 hard sessions a week, take most sets close to failure, and add a little over time (a touch more weight or a rep or two) so the protection signal stays loud." },
 };
 
 
@@ -193,6 +194,7 @@ TRAINING — simple muscle-protection programming, no phases/seasons/periodizati
 Full session (${p.equipment}): ${wk.full.join("; ")}.
 Minimum effective dose (low-energy days — this still counts, full credit): ${wk.minimum.join("; ")}.
 2-4 sessions/week is the target. If asked "give me a workout," give ONE session — infer whether today's a full-energy or low-energy day from what they say, default to the minimum-dose version if they mention low energy, low appetite, or fatigue.
+LIFT HEAVY — this is the point of training here: challenging weight, most sets taken close to failure, is what actually sends the "keep this muscle" signal while weight comes down. Light, comfortable reps don't send it. Coach them to pick a weight that's genuinely hard for the listed rep range, and to nudge it up a little over time (a bit more weight or an extra rep) so the signal stays loud. Intensity beats volume here — a few hard sets outweigh lots of easy ones, which also respects their limited energy. On low-energy days the minimum dose still counts, but even then push the working sets to be actually challenging for the reps they do.
 
 RULES:
 - Protein is the dominant signal, always — it's what protects muscle during ANY deficit, voluntary or not. Calories matter for energy, but protein coming up short is the thing that actually costs muscle.
@@ -229,7 +231,7 @@ CRITICAL OUTPUT RULE: your entire response must be ONE valid JSON object and NOT
 {"reply":"<coach message, tight, 2-4 sentences max, one next step>","logs":[{"name":"<short>","cal":<int>,"protein":<int>,"carbs":<int>,"fat":<int>,"verdict":"good"|"caution"|"bad"}]}
 (Always an array, even for one item. Use "logs": [] if nothing was eaten this turn — e.g. workout requests, check-ins, general questions.)`;
 
-  const volatilePrompt = `TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Minerals today: ${t.vitamin ? "taken" : "not yet"}.`;
+  const volatilePrompt = `TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Minerals today: ${t.vitamin ? "taken" : "not yet"}. Resistance training today: ${t.lifted ? "done" : "not yet"}.`;
 
   return [
     { type: "text", text: staticPrompt, cache_control: { type: "ephemeral" } },
@@ -1055,6 +1057,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
 
   const setVal = (patch) => saveToday({ ...today, ...patch });
   const toggleVitamin = () => saveToday({ ...today, vitamin: !today.vitamin });
+  const toggleLifted = () => saveToday({ ...today, lifted: !today.lifted });
 
   return (
     <div className="mm"><style>{CSS}</style>
@@ -1125,6 +1128,12 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
               <button onClick={() => setVal({ water: Math.max(0, (today.water || 0) - 8) })} disabled={(today.water || 0) <= 0}>−</button>
               <button onClick={() => setVal({ water: (today.water || 0) < profile.waterGoal ? Math.min(profile.waterGoal, (today.water || 0) + 8) : (today.water || 0) + 8 })}>+</button>
             </div>
+          </div>
+        </div>
+        <div className="sigrow">
+          <div className={`sig ${today.lifted ? "lit-go" : ""}`} onClick={toggleLifted}>
+            <button className="ibadge" onClick={toggleExplain("trained")}>ⓘ</button>
+            <span className="sl">Trained</span><span className="sv">{today.lifted ? "✅" : "⬜"}</span>
           </div>
         </div>
         {expandedTile && TILE_INFO[expandedTile] && (
@@ -1725,6 +1734,7 @@ function ScoreCard({ d, fix }) {
         <Row lab="Protect" v={d.inProtectionMode ? "🛡️ Protection Mode" : d.compositionConcern ? (d.hasRecentBfTrend ? "⚠️ Losing muscle" : "⚠️ Loss too fast") : d.chronicHydrationRisk ? "⚠️ Hydration behind" : "✅ On track"} color={d.inProtectionMode || d.compositionConcern || d.chronicHydrationRisk ? "var(--stop)" : "var(--go)"} />
         <Row lab="Water" v={d.waterHit ? `💧 ${d.water}/${d.waterGoal}oz — hit it` : `💧 ${d.water}/${d.waterGoal}oz — light`} color={d.waterHit ? "var(--go)" : "var(--hold)"} />
         <Row lab="Vitamin" v={d.vitaminHit ? "✅ Taken" : "⬜ Skipped"} color={d.vitaminHit ? "var(--go)" : "var(--faint)"} />
+        <Row lab="Trained" v={d.trainHit ? "💪 Trained" : "⬜ Rest day"} color={d.trainHit ? "var(--go)" : "var(--faint)"} />
         {d.inProtectionMode && <Row lab="Muscle Protection Mode" v={`🛡️ ${d.protectionDaysLeft} clean day${d.protectionDaysLeft === 1 ? "" : "s"} left`} color="var(--stop)" />}
       </div>
       <div style={{ marginTop: 10, color: (d.compositionConcern || d.inProtectionMode) ? "var(--stop)" : "var(--hold)", fontWeight: 600, fontSize: 14 }}>🛡️ {fix}</div>
