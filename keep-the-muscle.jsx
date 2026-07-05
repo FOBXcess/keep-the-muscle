@@ -288,7 +288,7 @@ const CSS = `
 --go:#8BE05A;--hold:#F2B33D;--stop:#F0604D;--water:#56C7F0;--carb:#C79BF2;--fat:#F2A65A;--gold:#D4AF37;}
 *{box-sizing:border-box;}
 html,body{overflow:hidden;overscroll-behavior:none;}
-.mm{font-family:'Inter',system-ui,sans-serif;background:var(--ink);color:var(--txt);height:100dvh;height:100svh;overflow:hidden;position:relative;display:flex;flex-direction:column;}
+.mm{font-family:'Inter',system-ui,sans-serif;background:var(--ink);color:var(--txt);height:100dvh;height:100svh;height:100%;overflow:hidden;position:relative;display:flex;flex-direction:column;}
 .sg{font-family:'Space Grotesk',sans-serif;}
 .scroll{padding:16px;overflow-y:auto;flex:1 1 auto;}
 .scroll.center{display:flex;flex-direction:column;justify-content:safe center;max-width:560px;margin:0 auto;width:100%;padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));}
@@ -566,7 +566,7 @@ function gradeDay(day, profile, meta, finalize) {
   return { data, fix, newMeta };
 }
 
-export default function App({ store: injectedStore } = {}) {
+export default function App({ store: injectedStore, onLogout } = {}) {
   if (injectedStore) _store = injectedStore;
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -726,7 +726,7 @@ export default function App({ store: injectedStore } = {}) {
     </div>
   );
 
-  return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
+  return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, onLogout, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
 }
 
 /* ---------------- GOAL-WEIGHT BACKFILL (gate for pre-rewrite users) ---------------- */
@@ -810,7 +810,7 @@ function Onboarding({ onDone }) {
 }
 
 /* ---------------- COACH (pinned dash + chat) ---------------- */
-function Coach({ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile }) {
+function Coach({ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile, onLogout }) {
   const [input, setInput] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [expandedTile, setExpandedTile] = useState(null);
@@ -1195,6 +1195,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
         <div style={{ textAlign: "center", marginTop: 6, display: "flex", justifyContent: "center", gap: 14 }}>
           <ClearTodayLink onClear={clearToday} />
           <button className="x" onClick={resetProfile}>Reset profile</button>
+          {onLogout && <button className="x" onClick={onLogout}>Log out</button>}
         </div>
       </div>
       {scanOpen && (

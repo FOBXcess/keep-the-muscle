@@ -27,6 +27,7 @@ function makeStore(supabase, userId) {
           heightIn: data.height_in,
           age: data.age,
           bf: data.bf,
+          goalWeightLbs: data.goal_weight_lbs,
           equipment: data.equipment,
           restrictions: data.restrictions,
           calories: data.calories,
@@ -109,6 +110,7 @@ function makeStore(supabase, userId) {
           height_in: value.heightIn,
           age: value.age,
           bf: value.bf,
+          goal_weight_lbs: value.goalWeightLbs,
           equipment: value.equipment,
           restrictions: value.restrictions,
           calories: value.calories,
@@ -172,5 +174,9 @@ function makeStore(supabase, userId) {
 export default function AppShell({ userId }) {
   const supabase = createClient();
   const store = useMemo(() => makeStore(supabase, userId), [userId]);
-  return <KTMApp store={store} />;
+  const onLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+  return <KTMApp store={store} onLogout={onLogout} />;
 }

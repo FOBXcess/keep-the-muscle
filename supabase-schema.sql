@@ -9,6 +9,7 @@ create table if not exists profiles (
   height_in numeric,
   age integer,
   bf numeric,
+  goal_weight_lbs numeric,
   equipment text,
   restrictions text,
   calories integer,
