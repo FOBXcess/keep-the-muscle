@@ -240,24 +240,26 @@ CRITICAL OUTPUT RULE: your entire response must be ONE valid JSON object and NOT
    Same idea as Autopilot's scan — preview a food BEFORE eating it — but the verdict
    logic is rebuilt around this app's actual rules: there's no budget to stay under,
    no seed-oil framework, and the real question is protein-per-bite and whether it's
-   actually getting them closer to the floor, not whether it "fits" a ceiling. */
+   actually getting them over the protein floor, not whether it "fits" a ceiling. */
 function scanSystemPrompt(p, t) {
   const calLeft = Math.max(0, p.calories - t.cal);
-  const proteinLeft = Math.max(0, p.protein - t.protein);
+  const proteinFloor = p.proteinFloor != null ? p.proteinFloor : Math.round(p.protein * 0.70);
+  const floorLeft = Math.max(0, proteinFloor - t.protein);
+  const targetLeft = Math.max(0, p.protein - t.protein);
   return `You are the Muscle Mindset — Keep the Muscle coach doing a PRE-EAT SCAN — a preview verdict, NOT a food log. The user is thinking about eating something and wants to know if it's a good move RIGHT NOW before they commit.
 
 DO NOT LOG THIS FOOD. Return "logs": [] always. This is a preview only.
 
-USER'S DAY SO FAR: ${t.cal} cal eaten (${calLeft > 0 ? calLeft + " to go toward the floor" : "floor reached — going over is never the issue here"}), ${t.protein}g protein (${proteinLeft > 0 ? proteinLeft + "g still needed" : "protein floor hit ✅"}), water: ${t.water || 0}/${p.waterGoal}oz.
-USER TARGETS: ${p.calories} cal, ${p.protein}g protein, ${p.carbs}g carbs, ${p.fat}g fat. Appetite lately: ${p.appetite}.
-Remember: the calorie number is a protective floor, not a ceiling — there is no "over budget" state to warn about here. The only thing worth flagging is whether this food meaningfully helps close the protein gap, especially given appetite is the bottleneck, not calories.
+USER'S DAY SO FAR: ${t.cal} cal eaten, ${t.protein}g protein (${floorLeft > 0 ? floorLeft + "g under the protein FLOOR — this is the line that protects muscle, get over it first" : targetLeft > 0 ? "floor cleared ✅ — " + targetLeft + "g more to hit the target" : "target hit ✅"}), water: ${t.water || 0}/${p.waterGoal}oz.
+USER TARGETS: calories ${p.calories} (maintenance for goal weight, not a cap), protein FLOOR ${proteinFloor}g / TARGET ${p.protein}g, ${p.carbs}g carbs, ${p.fat}g fat. Appetite lately: ${p.appetite}.
+Remember: calories are maintenance for their goal body, not a ceiling — there is no "over budget" state to warn about here. Protect the protein floor, don't chase the deficit. The only thing worth flagging is whether this food meaningfully helps close the protein gap (floor first, then target), especially given appetite is the bottleneck, not calories.
 
 SCAN RULES:
 1. IDENTIFY the food from the photo or description. Use web search for any branded/restaurant item to get real macros. For a generic meal, estimate accurately.
 2. PORTION & MACRO CONSISTENCY — the user has specified a portion size. ALL FOUR macros (cal/protein/carbs/fat) MUST be for that ONE exact portion — never mix a per-serving protein with a per-package calorie count. The calorie value is DERIVED, not looked up: set cal = protein×4 + carbs×4 + fat×9, rounded to the nearest 5 (the app enforces this exact formula, so any calorie figure you write anywhere — including the Reality Check — MUST use this derived number, or it will contradict the card). (For a 3 oz tuna serving: 26g protein, 0g carbs, ~1g fat → cal = 26×4 + 1×9 = 113 → 115. NOT 400+ cal.)
 3. VERDICT: "good", "caution", or "bad" — based on protein-per-bite (most protein for the least stomach space, since appetite/volume is the real constraint), and whether it's appetite-friendly (easy to actually get down right now, e.g. liquid/soft protein when appetite is low). "good" = protein-dense and easy to get down. "caution" = low protein for its volume, or it's likely to crowd out room for more eating today. "bad" = takes up real stomach space with little to no protein payoff, or is genuinely hard to get down when appetite is the bottleneck.
 4. SWAP: if verdict is "caution" or "bad", give ONE specific, actionable swap toward something higher protein-per-bite — be concrete ("swap the [X] for [Y]"), not vague.
-5. CONTEXT LINE: one sentence on how this fits their day right now — lean on the protein gap, not the calorie ceiling.
+5. CONTEXT LINE: one sentence on how this fits their day right now — lean on the protein gap (floor first, then target), not calories.
 6. NO seed-oil detection, no hidden-sugar flagging — not this app's framework.
 7. CARD VERDICT (drives the shareable card): map the food to ONE of these four —
    • "elite" 🔥 = a standout, exceptional protein-per-bite; the kind of choice you'd screenshot to brag about.
