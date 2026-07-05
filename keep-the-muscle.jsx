@@ -74,59 +74,63 @@ function fileToImg(file, max = 768, q = 0.72) {
 }
 
 /* ---------------- target math (computed, not guessed) ----------------
-   Core philosophy shift from Autopilot: there is no engineered deficit here.
-   Appetite suppression IS the deficit — the app's job is to set a PROTECTIVE
-   near-maintenance number and never let it slip below the clinical floor,
-   not to carve out additional restriction on top of what's already happening. */
-function buildTargets({ sex, weightLbs, heightIn, age, bf, appetite }) {
-  const kg = weightLbs / 2.2046, cm = heightIn * 2.54;
+   GLP-1 research rewrite: everything anchors on GOAL bodyweight, not the current
+   scale number. The current number inflates targets for someone with a lot to lose;
+   goal weight is the body we're feeding and protecting toward. Two protein numbers off
+   goal weight — a non-negotiable FLOOR (0.70 g/lb) and an ideal TARGET (1.00 g/lb) —
+   and calories set at maintenance for the GOAL body, so there's a gentle real deficit
+   without ever engineering a harsh cut on top of appetite suppression. Protect the
+   floor, don't chase the deficit. */
+const FLOOR_G_PER_LB = 0.70;   // non-negotiable protein minimum, per lb of GOAL weight
+const TARGET_G_PER_LB = 1.00;  // ideal protein, per lb of GOAL weight
+function buildTargets({ sex, weightLbs, goalWeightLbs, heightIn, age, bf, appetite }) {
+  // Goal weight is the basis for everything. If it's missing or nonsensical (e.g. above
+  // current weight for a loss population), fall back to current weight so math never breaks.
+  const goalLbs = goalWeightLbs > 0 ? goalWeightLbs : weightLbs;
+  const kg = weightLbs / 2.2046, goalKg = goalLbs / 2.2046, cm = heightIn * 2.54;
   const hasBf = bf !== null && bf !== undefined && bf > 0 && bf < 60;
+  // Lean mass is measured on the CURRENT body — and it's exactly what we're protecting
+  // all the way to goal (keep the muscle). So goal lean mass ≈ current lean mass.
   const leanKg = hasBf ? kg * (1 - bf / 100) : null;
 
-  // BMR: Katch-McArdle (lean-mass based) when body fat % is known; otherwise Mifflin-St Jeor.
+  // BMR: Katch-McArdle off the lean mass we're carrying to goal when body fat % is known;
+  // otherwise Mifflin-St Jeor fed with the GOAL weight (maintenance for the goal body).
   const bmr = hasBf
     ? 370 + 21.6 * leanKg
-    : (sex === "male" ? 10 * kg + 6.25 * cm - 5 * age + 5 : 10 * kg + 6.25 * cm - 5 * age - 161);
+    : (sex === "male" ? 10 * goalKg + 6.25 * cm - 5 * age + 5 : 10 * goalKg + 6.25 * cm - 5 * age - 161);
 
-  // No goal multiplier stacked on top — the target IS roughly maintenance, never an
-  // added cut. But the activity multiplier itself scales DOWN with appetite: lower
-  // appetite tends to travel with lower overall energy/activity too (fatigue, illness),
-  // so this reuses the appetite signal already collected rather than a flat assumption
-  // calibrated for Autopilot's actively-training population (1.45x).
+  // Maintenance for the goal body — no diet-style cut stacked on top. The activity
+  // multiplier scales DOWN with appetite: lower appetite tends to travel with lower
+  // overall energy/activity (fatigue, illness), so this reuses the appetite signal.
   const activityMult = appetite === "barely" ? 1.2 : appetite === "low" ? 1.25 : appetite === "reduced" ? 1.3 : 1.35;
   const tdee = bmr * activityMult;
 
   // Clinical safety floor — 1200 cal/day women, 1500 cal/day men, without medical
-  // supervision. For a lot of users TDEE math alone already clears this; for smaller/
-  // older/lower-mass bodies the floor is the real backstop that keeps the number protective.
+  // supervision. The real backstop that keeps the number protective for smaller bodies.
   const medicalFloor = sex === "male" ? 1500 : 1200;
   const calories = Math.max(r10(tdee), medicalFloor);
   const belowMedicalFloor = r10(tdee) < medicalFloor;
 
   const leanLbs = hasBf ? leanKg * 2.2046 : weightLbs;
 
-  // Protein multiplier scales UP for lighter bodies. This is the resolved fix for the
-  // carb-floor problem from the earlier GLP-1 build: a flat low multiplier on a small
-  // frame produces an unreasonably low carb number once a protein:carb ratio is applied
-  // on top of it. Raising the multiplier for lighter bodyweights fixes it at the source
-  // instead of bolting on an arbitrary flat carb floor that breaks the underlying logic.
-  const pMult = leanLbs < 110 ? 1.3 : leanLbs < 140 ? 1.2 : 1.1;
-  const protein = r5(leanLbs * pMult);
+  // Protein: two numbers off GOAL weight. Floor = 0.70 g/lb (never drop below), target =
+  // 1.00 g/lb (ideal). `protein` stays the single number the rest of the app treats as
+  // "the goal" (tiles light at 100% of it) — that's the target. `proteinFloor` is the
+  // hard minimum surfaced in coaching and the at-risk logic.
+  const proteinFloor = r5(goalLbs * FLOOR_G_PER_LB);
+  const protein = r5(goalLbs * TARGET_G_PER_LB);
 
-  // No protein:carb RATIO here — that's deliberately cut. Ratio-driven carbs is exactly
-  // the kind of macro-cycling complexity that breaks on light frames and isn't needed for
-  // this population. Fat gets a sane floor off lean mass; carbs simply fill what's left.
+  // Fat gets a sane floor off lean mass; carbs fill what's left. No protein:carb ratio.
   const fatFloor = leanLbs * 0.3;
   const fat = r5(Math.max(fatFloor, (calories * 0.27) / 9));
   const carbs = Math.max(r5((calories - protein * 4 - fat * 9) / 4), 40);
 
-  // Water goal runs a bit higher than a standard hydration target — electrolytes/water
-  // are a daily default concern here, since appetite loss quiets thirst too, not just
-  // a training-day sweat-loss thing.
+  // Water goal runs a bit higher than a standard hydration target — off current weight,
+  // since hydration tracks the body you have now, not the goal.
   const waterGoal = clamp(r5(weightLbs * 0.6), 64, 110);
 
   return {
-    calories, protein, carbs, fat, waterGoal,
+    calories, protein, proteinFloor, carbs, fat, waterGoal, goalWeightLbs: goalLbs,
     leanLbs: hasBf ? Math.round(leanLbs) : null, bf: hasBf ? bf : null,
     accuracy: hasBf ? "lean-mass" : "weight-based", belowMedicalFloor,
   };
@@ -155,8 +159,8 @@ const WORKOUTS = {
 // person using the app, not the coach prompt — this is what renders in the shared
 // explain panel when a badge is tapped.
 const TILE_INFO = {
-  calories: { label: "CALORIES", text: "Total calories vs. your daily target. The number is set high on purpose — near maintenance with no diet-style cut, since the deficit here already comes from low appetite. It's a ceiling to grow toward, not a bar to clear today, so the tile lights green once you're halfway there. Going over is never the issue; sustained under-eating is — which is why a warning shows if you drop below the clinical daily floor (1,500 cal men / 1,200 cal women)." },
-  protein: { label: "PROTEIN", text: "Protein is the signal that matters most — it's what actually protects muscle during any deficit, appetite-driven or not. The tile lights green only at 100% of your target, because protein is the one number worth fully hitting. Coming up short here is the real muscle-loss risk, not the calorie count." },
+  calories: { label: "CALORIES", text: "Total calories vs. your daily target. This is set at roughly maintenance for your GOAL weight — not the scale today — so it's a gentle, honest number, not a harsh cut piled on top of low appetite. It's not a bar you have to clear or a cap you can't cross; the tile lights green once you're halfway there. The only thing this watches for is going too far under, day after day — a warning shows if you drop below the clinical daily floor (1,500 cal men / 1,200 cal women)." },
+  protein: { label: "PROTEIN", text: "Protein is the signal that matters most — it's what actually protects muscle while the weight comes down. Two numbers, both off your goal weight: a FLOOR (0.7 g/lb) you never want to drop below, and a TARGET (1.0 g/lb) that's ideal. The tile lights green at 100% of the target, because that's the number worth fully hitting. Coming up short — especially below the floor — is the real muscle-loss risk, not the calorie count." },
   hydrate: { label: "HYDRATE", text: "Water plus minerals, together — the daily recovery basics for this population. Appetite loss quiets thirst the same way it quiets hunger, so reduced intake itself drives dehydration, not just sweat. The tile lights green when you've hit your water goal AND logged your minerals (a multivitamin and/or an electrolyte mix). A pinch of salt in water counts." },
   water: { label: "WATER", text: "Electrolytes are worth pairing with water daily here — appetite loss quiets thirst the same way it quiets hunger, so reduced intake itself is often the driver, not just sweat losses. A basic electrolyte mix, or a pinch of salt in water, helps." },
   minerals: { label: "MINERALS", text: "One daily tap covering a multivitamin and/or electrolytes — insurance against the gaps most likely to open up when food variety drops on reduced intake: B12, iron, vitamin D, magnesium, plus the sodium and potassium electrolytes carry. A basic complete multivitamin plus an electrolyte mix (or a pinch of salt in water) covers most of this. Check with a doctor before adding anything beyond that." },
@@ -183,7 +187,7 @@ function systemPrompt(p, t, meta) {
   const wk = WORKOUTS[p.equipment] || WORKOUTS.home;
   const staticPrompt = `You are the Muscle Mindset — Keep the Muscle coach: a low-appetite muscle-protection coach for people eating much less than usual (GLP-1 medication, illness recovery, high stress, or any other cause). MAKE decisions, don't suggest. The job here is preventing UNDER-eating, not preventing overeating. No guilt, ever — appetite loss usually isn't a choice. Keep replies tight, end with ONE next step. No long lectures.
 
-USER PROFILE: ${p.sex}, ${p.weightLbs} lb${p.bf ? ` at ${p.bf}% body fat (${p.leanLbs} lb lean mass — targets built off this)` : " (body fat % unknown — targets built off total weight)"}, appetite lately: ${p.appetite}. Targets: ${p.calories} cal, ${p.protein}g protein, ${p.carbs}g carbs, ${p.fat}g fat, ${p.waterGoal}oz water. Training access: ${p.equipment}. Restrictions: ${p.restrictions || "none"}.
+USER PROFILE: ${p.sex}, ${p.weightLbs} lb now → ${p.goalWeightLbs} lb goal${p.bf ? ` at ${p.bf}% body fat (${p.leanLbs} lb lean mass)` : ""}, appetite lately: ${p.appetite}. All targets are built off GOAL weight, not the scale today. PROTEIN is two numbers: floor ${p.proteinFloor}g (non-negotiable minimum — below this, muscle is on the line) and target ${p.protein}g (ideal). Other targets: ${p.calories} cal, ${p.carbs}g carbs, ${p.fat}g fat, ${p.waterGoal}oz water. Training access: ${p.equipment}. Restrictions: ${p.restrictions || "none"}.
 
 TRAINING — simple muscle-protection programming, no phases/seasons/periodization:
 Full session (${p.equipment}): ${wk.full.join("; ")}.
@@ -195,7 +199,7 @@ RULES:
 - MEAL CADENCE: small, frequent meals beat 2-3 big ones — a full stomach kills an already-suppressed appetite further. Push more, smaller protein hits across the day rather than front- or back-loading.
 - WHEN APPETITE IS LOW: favor liquid/soft protein — protein shakes, Greek yogurt, cottage cheese, bone broth + protein powder, scrambled eggs, string cheese. These go down easiest when a full plate feels impossible.
 - "EAT THIS NOW" / protein-per-bite: when asked what to eat, what to eat now, or for suggestions when appetite is low, rank options by protein delivered per bite / per stomach-space, NOT by calorie efficiency. Most protein for the least volume is the actual value here — that's the differentiated thing this app does versus a generic tracker.
-- THE CALORIE NUMBER WILL LOOK HIGH — say so before they have to ask. It's set near maintenance on purpose, with no diet-style cut subtracted, because the deficit here is already coming from appetite — stacking another one on top is the exact thing that costs muscle. That means it will look bigger than a typical weight-loss number, and almost certainly bigger than what they're managing to eat most days right now. That gap is expected, not a sign anything's wrong or unreachable. Make this explicit any time the number comes up, looks daunting, or they compare it to a "normal" diet target: it's a ceiling to grow toward over time, not a bar to clear today. Going over it is never a problem this app watches for — only going too far under it is.
+- THE CALORIE NUMBER IS MAINTENANCE FOR THEIR GOAL BODY, not the scale today — it's a gentle, honest number, never a harsh diet cut stacked on top of appetite suppression. There's a small real deficit baked in simply because it's set for a lighter goal weight, but you never engineer more restriction beyond that — appetite is already handling the deficit. Frame it as: eat around this number with protein hit and you're doing it right. It's not a bar to clear or a hard cap to stay under; going a little over is never a problem this app watches for — only going too far under, day after day, is. If they compare it to a "normal" aggressive diet target, tell them plainly: we protect the floor, we don't chase the deficit, because chasing it is exactly what costs muscle.
 - HYDRATION + ELECTROLYTES: a sensible DAILY default for this population specifically — appetite loss quiets the thirst signal the same way it quiets hunger, so reduced intake itself (not just sweat losses) is the driver. Encourage them daily, not just on training days.
 - GI / CONSTIPATION: common here and not a medical emergency on its own. Non-diagnostic guidance only — more fluid, magnesium, gentle fiber build-up (not a sudden high-fiber dump), short walks. If asked for "GI help," give this directly.
 - VITAMIN/SUPPLEMENT LABEL PHOTOS: if a photo is clearly a multivitamin or electrolyte product label (not food), read it and give a short, honest take on whether it covers what matters for this population (B12, iron, vitamin D, magnesium are the ones most likely to run short on reduced intake) — generic and educational, never a dosing recommendation. This is NOT a food log: always return "logs": [] for these, never invent calories/protein for a supplement. Checking the Minerals tile off is a separate, manual action on their end — don't tell them it's been marked done.
@@ -205,8 +209,8 @@ RULES:
 - RED-FLAG SAFETY LIST (if any of these come up, however phrased): persistent vomiting, can't keep fluids down, rapid unexplained weight loss, fainting, chest pain, severe weakness, blood in stool or vomit, or appetite loss lasting more than 1-2 weeks. If any appear, that turn's reply should clearly and calmly say this needs a doctor's attention, ahead of any other coaching in that message. Frame it as the general safety advice anyone would get for these symptoms — not as managing a medication's side effects.
 - WEEKLY TRENDS over single-day numbers: weight, energy, and appetite all fluctuate day to day. What matters is the direction over 1-2 weeks. If weight is dropping fast (roughly more than 1% of bodyweight per week), say so plainly and connect it to protein — faster loss with low protein intake is a faster route to losing muscle, not just fat. If they've logged body fat % alongside weight at least twice, 10+ days apart, that's the more direct signal — it can show whether the loss is actually fat or muscle, not just a proxy for it. Either way, never react to a single reading: home body-fat scales swing several percent just from hydration and time of day, so one weird number isn't a trend. If they ask about a single jump, say so plainly rather than reading meaning into noise.
 ${meta.protectionDaysLeft ? `\nMUSCLE PROTECTION MODE IS CURRENTLY ACTIVE: ${meta.protectionDaysLeft} clean day(s) left. Reinforce this if relevant — today specifically needs protein at floor, calories at floor, and hydration hit, or the clock restarts.` : ""}
-- CALORIES TILE LOGIC (use these exact numbers if asked why it's lit/not lit/warning — never invent different thresholds): GREEN/lit = calories at or above 50% of target (the target runs high on purpose, so half of it is already a solid day). RED/warning = at least 30% of the calorie target logged AND total calories still under the clinical daily floor (${p.sex === "male" ? 1500 : 1200} cal for this user) — the tile's concern is under-eating, never overeating.
-- PROTEIN TILE LOGIC: GREEN/lit = protein at 100% of target — protein is the one number worth fully hitting, so nothing less lights it. RED/at-risk = at least 30% of the calorie target logged AND protein still under 50% of target; that's the real muscle-loss signal.
+- CALORIES TILE LOGIC (use these exact numbers if asked why it's lit/not lit/warning — never invent different thresholds): GREEN/lit = calories at or above 50% of target (the target is maintenance for their goal body, so half is already a solid day). RED/warning = at least 30% of the calorie target logged AND total calories still under the clinical daily floor (${p.sex === "male" ? 1500 : 1200} cal for this user) — the tile's concern is under-eating, never overeating.
+- PROTEIN TILE LOGIC (four states — this is the signal that matters most; protein has a FLOOR of ${p.proteinFloor}g and a TARGET of ${p.protein}g, both off goal weight): LIT/green = protein ≥ target (${p.protein}g), full send. OK/amber = protein between the floor and target (body protected, not maxed, one more hit gets them there). AT-RISK/red = something has been logged today AND protein is still under the floor (${p.proteinFloor}g) — below the protective minimum, muscle on the line, this is the real risk. NO-DATA/calm = nothing logged yet and it's before 8pm — no verdict, just an empty plate, never scold this. If asked why it's a given color, use these exact lines.
 - HYDRATE TILE LOGIC: a TODAY signal combining water and minerals. GREEN/lit = the water goal (${p.waterGoal}oz) is hit AND minerals are logged for the day (a multivitamin and/or electrolytes). Otherwise it stays unlit — there's no red state on this tile. Longer-run patterns (several days of low hydration, or an unsafe loss rate) don't show here; they feed Muscle Protection Mode instead — the loss-rate check uses body-fat-tagged weigh-ins (lean mass directly) when at least two exist 10+ days apart, otherwise it falls back to weight alone. Raise those trends in a check-in, not as a tile explanation.
 - Commands you handle: "eat this now" / "what should I eat" (rank by protein-per-bite, favor soft/liquid if appetite's low), "meal plan" (a few small protein-anchored meals/snacks for the day), "give me a workout" (use the session library above, full or minimum), "GI help" (the non-diagnostic guidance above), "check in" (ask how appetite/energy/training are trending over the week, not the day).
 
@@ -327,6 +331,9 @@ label.fl{display:block;font-size:13px;color:var(--muted);margin:16px 0 7px;font-
 .signals3 .word.lit-risk{border-color:var(--stop);background:rgba(240,96,77,.14);box-shadow:0 0 14px rgba(240,96,77,.28);animation:riskpulse 2s ease-in-out infinite;}
 .signals3 .word.lit-risk .wl,.signals3 .word.lit-risk .wb{color:var(--stop);}
 .signals3 .word.lit-risk .wc{color:#f7b3ab;}
+.signals3 .word.lit-ok{border-color:var(--hold);background:rgba(242,179,61,.12);box-shadow:0 0 14px rgba(242,179,61,.20);}
+.signals3 .word.lit-ok .wl,.signals3 .word.lit-ok .wb{color:var(--hold);}
+.signals3 .word.lit-ok .wc{color:#f0d79a;}
 @keyframes riskpulse{0%,100%{box-shadow:0 0 11px rgba(240,96,77,.22);}50%{box-shadow:0 0 18px rgba(240,96,77,.4);}}
 .ibadge{position:absolute;top:3px;right:4px;background:none;border:none;color:var(--faint);font-size:10px;cursor:pointer;padding:2px 3px;line-height:1;font-family:'Space Grotesk';opacity:.65;}
 .ibadge:hover{opacity:1;color:var(--txt);}
@@ -694,8 +701,22 @@ export default function App({ store: injectedStore } = {}) {
       <Onboarding onDone={(p) => {
         const pWithStart = { ...p, startDate: todayKey() };
         setProfile(pWithStart); store.set("ktm:profile", pWithStart);
-        const t = { ...blankDay(), messages: [{ role: "c", text: `You're set. ${p.calories} cal, ${p.protein}g protein, ${p.waterGoal}oz water.\n\nThat calorie number is probably higher than you'd expect, maybe higher than what you're managing to eat most days right now. That's intentional — it's a ceiling to grow toward, not a bar you need to clear today. Going over it is never the problem here; going too far under it, day after day, is the only thing this app watches for.\n\nTell me what you eat and I'll track it. Try "eat this now", "give me a workout", or "GI help".\n\nFirst move: something small and protein-heavy — a shake, Greek yogurt, or a couple eggs — even if a full meal doesn't sound possible right now.` }] };
+        const t = { ...blankDay(), messages: [{ role: "c", text: `You're set. Protein floor ${p.proteinFloor}g, target ${p.protein}g, ${p.calories} cal, ${p.waterGoal}oz water.\n\nThese are built off your goal weight, not the scale today — so the numbers stay honest instead of inflated. Protein is the whole game: hitting the floor is non-negotiable, the target is ideal. That's what protects muscle while the weight comes down.\n\nThe calorie number isn't a bar to clear or a hard cap — it's roughly maintenance for your goal body, so eating around it, with protein hit, is exactly right. Protect the floor, don't chase the deficit; your appetite is already doing that part.\n\nTell me what you eat and I'll track it. Try "eat this now", "give me a workout", or "GI help".\n\nFirst move: something small and protein-heavy — a shake, Greek yogurt, or a couple eggs — even if a full meal doesn't sound possible right now.` }] };
         saveToday(t);
+      }} />
+    </div>
+  );
+
+  // Existing users onboarded before the goal-weight rewrite have a profile with no
+  // goalWeightLbs. Rather than silently reusing their (inflated) current weight, gate
+  // them through a one-field step that recomputes every target off goal weight.
+  if (profile.goalWeightLbs == null) return (
+    <div className="mm"><style>{CSS}</style>
+      <GoalWeightBackfill profile={profile} onDone={(goalLbs) => {
+        const recomputed = buildTargets({ sex: profile.sex, weightLbs: profile.weightLbs, goalWeightLbs: goalLbs, heightIn: profile.heightIn, age: profile.age, bf: profile.bf, appetite: profile.appetite });
+        const next = { ...profile, goalWeightLbs: goalLbs, ...recomputed };
+        setProfile(next); store.set("ktm:profile", next);
+        saveToday({ ...today, messages: [...(today.messages || []), { role: "c", text: `Updated. Your targets are now built off your ${goalLbs} lb goal weight. Protein floor ${next.proteinFloor}g (never below), target ${next.protein}g, ${next.calories} cal. Protect the floor, don't chase the deficit.` }] });
       }} />
     </div>
   );
@@ -703,19 +724,41 @@ export default function App({ store: injectedStore } = {}) {
   return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
 }
 
+/* ---------------- GOAL-WEIGHT BACKFILL (gate for pre-rewrite users) ---------------- */
+function GoalWeightBackfill({ profile, onDone }) {
+  const [goalWt, setGoalWt] = useState("");
+  const goalLbs = parseFloat(goalWt);
+  const ok = goalLbs > 0 && goalLbs <= profile.weightLbs;
+  return (
+    <div className="scroll center">
+      <div className="card">
+        <div className="eyebrow">Muscle Mindset · Keep the Muscle</div>
+        <p className="lead">One quick update. Your targets now build off your goal weight — the body we're feeding toward — instead of the scale today. Add it and everything recalculates honestly.</p>
+        <label className="fl">Goal weight (lb) <span style={{ color: "var(--faint)" }}>(current: {profile.weightLbs} lb)</span></label>
+        <input className="inp" inputMode="decimal" placeholder="e.g. 140" value={goalWt} onChange={(e) => setGoalWt(e.target.value.replace(/[^\d.]/g, ""))} />
+        {goalWt && !ok && <p className="gate">⚠ Goal weight should be a realistic number at or below your current weight.</p>}
+      </div>
+      <button className="btn go" disabled={!ok} onClick={() => onDone(goalLbs)}>Update my targets →</button>
+    </div>
+  );
+}
+
 /* ---------------- ONBOARDING (gate) ---------------- */
 function Onboarding({ onDone }) {
   const [sex, setSex] = useState("");
   const [appetite, setAppetite] = useState("");
   const [ft, setFt] = useState(""); const [inch, setInch] = useState("");
-  const [wt, setWt] = useState(""); const [age, setAge] = useState("");
+  const [wt, setWt] = useState(""); const [goalWt, setGoalWt] = useState(""); const [age, setAge] = useState("");
   const [bfPct, setBfPct] = useState("");
   const [equip, setEquip] = useState("home");
   const [restr, setRestr] = useState("");
-  const lbs = parseFloat(wt), heightIn = parseFloat(ft) * 12 + (parseFloat(inch) || 0), a = parseFloat(age);
+  const lbs = parseFloat(wt), goalLbs = parseFloat(goalWt), heightIn = parseFloat(ft) * 12 + (parseFloat(inch) || 0), a = parseFloat(age);
   const bf = bfPct ? parseFloat(bfPct) : null;
   const bfValid = bf === null || (bf > 0 && bf < 60);
-  const ok = sex && appetite && lbs > 0 && parseFloat(ft) > 0 && a > 0 && bfValid;
+  // Goal weight drives every target. Must be a real number and not above current weight
+  // (this is a loss population — a goal above where you are now is a mis-entry).
+  const goalValid = goalLbs > 0 && lbs > 0 && goalLbs <= lbs;
+  const ok = sex && appetite && lbs > 0 && goalValid && parseFloat(ft) > 0 && a > 0 && bfValid;
 
   return (
     <div className="scroll center">
@@ -736,6 +779,12 @@ function Onboarding({ onDone }) {
           </div>
           <div style={{ flex: 1 }}><label className="fl">Weight (lb)</label><input className="inp" inputMode="decimal" placeholder="150" value={wt} onChange={(e) => setWt(e.target.value.replace(/[^\d.]/g, ""))} /></div>
         </div>
+        <label className="fl">Goal weight (lb) <span style={{ color: "var(--faint)" }}>(the body we're feeding toward)</span></label>
+        <input className="inp" inputMode="decimal" placeholder="e.g. 140" value={goalWt} onChange={(e) => setGoalWt(e.target.value.replace(/[^\d.]/g, ""))} />
+        <p style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6, lineHeight: 1.4 }}>
+          Your protein floor and calories are built off this, not the scale today. Goal weight keeps the numbers honest instead of inflating them for a heavier starting point.
+        </p>
+        {wt && goalWt && !goalValid && <p className="gate">⚠ Goal weight should be a realistic number at or below your current weight.</p>}
         <label className="fl">Age</label>
         <input className="inp" inputMode="numeric" placeholder="35" value={age} onChange={(e) => setAge(e.target.value.replace(/[^\d]/g, ""))} />
         <label className="fl">Body fat % <span style={{ color: "var(--faint)" }}>(optional, but the most accurate input)</span></label>
@@ -748,9 +797,9 @@ function Onboarding({ onDone }) {
         <div className="seg">{[["gym", "Gym"], ["home", "Home (DBs/bands)"], ["bodyweight", "Bodyweight only"]].map(([v, l]) => <button key={v} className={equip === v ? "on" : ""} onClick={() => setEquip(v)}>{l}</button>)}</div>
         <label className="fl">Restrictions <span style={{ color: "var(--faint)" }}>(optional)</span></label>
         <input className="inp t" placeholder="e.g. no dairy" value={restr} onChange={(e) => setRestr(e.target.value)} />
-        {!ok && bfValid && <p className="gate">⚠ Appetite, sex, height, weight & age are needed before targets — computed, never generic.</p>}
+        {!ok && bfValid && goalValid && <p className="gate">⚠ Appetite, sex, height, weight, goal weight & age are needed before targets — computed, never generic.</p>}
       </div>
-      <button className="btn go" disabled={!ok} onClick={() => onDone({ sex, appetite, weightLbs: lbs, heightIn, age: a, equipment: equip, restrictions: restr.trim(), ...buildTargets({ sex, weightLbs: lbs, heightIn, age: a, bf, appetite }) })}>Build my plan →</button>
+      <button className="btn go" disabled={!ok} onClick={() => onDone({ sex, appetite, weightLbs: lbs, goalWeightLbs: goalLbs, heightIn, age: a, equipment: equip, restrictions: restr.trim(), ...buildTargets({ sex, weightLbs: lbs, goalWeightLbs: goalLbs, heightIn, age: a, bf, appetite }) })}>Build my plan →</button>
     </div>
   );
 }
@@ -780,10 +829,23 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   // A red warning only fires once real data is logged and intake is still under the clinical floor.
   const calLit = today.cal >= profile.calories * 0.5;
   const calWarn = !calLit && hasMeaningfulData && today.cal < medicalFloor;
-  // PROTEIN — the dominant muscle-protection signal; only fully lit at 100% of target. Deeply
-  // short protein with real data logged is the actual muscle-loss risk, so it flags red.
-  const proteinLit = today.protein >= profile.protein;
-  const proteinAtRisk = !proteinLit && hasMeaningfulData && today.protein < profile.protein * 0.5;
+  // PROTEIN — four-state Protein Floor (from the app-logic spec). Two lines off goal weight:
+  // floor (0.70 g/lb, protective minimum) and target (1.00 g/lb, growth number). The tile
+  // resolves to exactly one of: LIT (≥ target), OK (floor–target, protected but not maxed),
+  // AT-RISK (below floor AND the day has data — or it's past the 8pm cutoff on a bare plate),
+  // NO-DATA (nothing logged yet, before cutoff — calm, never scolded).
+  const RISK_CUTOFF_HOUR = 20, DEEP_SHORT_PCT = 0.50;
+  const proteinFloor = profile.proteinFloor != null ? profile.proteinFloor : Math.round(profile.protein * FLOOR_G_PER_LB);
+  const hasLoggedToday = (today.items && today.items.length > 0) || today.protein > 0 || today.cal > 0;
+  const pastRiskCutoff = new Date().getHours() >= RISK_CUTOFF_HOUR;
+  const proteinState = (!hasLoggedToday && !pastRiskCutoff) ? "nodata"
+    : today.protein >= profile.protein ? "lit"
+    : today.protein >= proteinFloor ? "ok"
+    : "risk";
+  const proteinLit = proteinState === "lit";
+  const proteinOk = proteinState === "ok";
+  const proteinAtRisk = proteinState === "risk";
+  const proteinDeepShort = proteinAtRisk && today.protein < proteinFloor * DEEP_SHORT_PCT;
 
   // Chronic hydration shortfall — Protect is supposed to watch "eating, hydrating, and
   // recovering" as a trend, not just today's number (that's what the Water adjuster tile
@@ -1010,8 +1072,8 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
         )}
         {showInfo && (
           <div style={{ fontSize: 10.5, color: "var(--faint)", marginBottom: 6, fontFamily: "Inter", lineHeight: 1.55 }}>
-            <b style={{ color: "var(--muted)", fontFamily: "Space Grotesk" }}>Why the calorie number looks high:</b> it's set near maintenance on purpose, with no diet-style cut subtracted — the deficit here already comes from appetite, so stacking another one on top is the thing that costs muscle. It's a ceiling to grow toward, not a bar to clear today. Over is never a problem; sustained-under is the only thing watched for.
-            {profile.accuracy === "lean-mass" && <div style={{ marginTop: 4 }}>✓ Targets built from {profile.leanLbs} lb lean mass ({profile.bf}% BF)</div>}
+            <b style={{ color: "var(--muted)", fontFamily: "Space Grotesk" }}>How your numbers are set:</b> everything's built off your goal weight ({profile.goalWeightLbs} lb), not the scale today — so it stays honest instead of inflated. Protein has a floor ({proteinFloor}g, never drop below) and a target ({profile.protein}g, ideal). Calories are roughly maintenance for the goal body: eat around it with protein hit and you're right. Protect the floor, don't chase the deficit — over is never watched for, only sustained-under.
+            {profile.accuracy === "lean-mass" && <div style={{ marginTop: 4 }}>✓ Protected from {profile.leanLbs} lb lean mass ({profile.bf}% BF)</div>}
             <div style={{ marginTop: 6 }}>Tap the ⓘ on any tile below for what it tracks specifically.</div>
           </div>
         )}
@@ -1022,11 +1084,11 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
             <span className="wb">{Math.min(999, Math.round((today.cal / profile.calories) * 100))}%</span>
             <span className="wc">{today.cal}/{profile.calories} cal</span>
           </div>
-          <div className={`word ${proteinLit ? "lit-go" : proteinAtRisk ? "lit-risk" : ""}`}>
+          <div className={`word ${proteinLit ? "lit-go" : proteinOk ? "lit-ok" : proteinAtRisk ? "lit-risk" : ""}`}>
             <button className="ibadge" onClick={toggleExplain("protein")}>ⓘ</button>
             <span className="wl">{proteinAtRisk ? "⚠️ PROTEIN" : "PROTEIN"}</span>
             <span className="wb">{Math.min(999, Math.round((today.protein / profile.protein) * 100))}%</span>
-            <span className="wc">{today.protein}/{profile.protein}g</span>
+            <span className="wc">{today.protein}/{profile.protein}g · floor {proteinFloor}</span>
           </div>
           <div className={`word ${hydrateLit ? "lit-go" : ""}`}>
             <button className="ibadge" onClick={toggleExplain("hydrate")}>ⓘ</button>
@@ -1037,7 +1099,14 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
         </div>
         {proteinAtRisk && (
           <p style={{ fontSize: 11.5, color: "var(--stop)", margin: "0 0 8px", lineHeight: 1.4, fontWeight: 600 }}>
-            🔴 Protein's deeply short with real data logged today — that's the muscle-loss risk, not a calorie number. Protein first, even small amounts.
+            {proteinDeepShort
+              ? "🔴 This is a big miss, not a small one — and appetite lying to you doesn't change what your muscle needs. Grab the fastest 30g you can and we'll call it a save."
+              : "🔴 You're under the floor today — not enough to protect the body you're building. This is where the scale drops but so does muscle. One real protein meal before bed: shake, chicken, eggs, whatever's fastest."}
+          </p>
+        )}
+        {proteinOk && (
+          <p style={{ fontSize: 11.5, color: "var(--hold)", margin: "0 0 8px", lineHeight: 1.4, fontWeight: 600 }}>
+            🟡 You're safe — body's protected, no alarms. Just not maxed yet. One more solid protein hit and you're at full send.
           </p>
         )}
         <div className="sigrow">
