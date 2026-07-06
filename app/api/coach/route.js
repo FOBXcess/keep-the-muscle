@@ -32,6 +32,29 @@ export async function POST(req) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Per-user rate limiting (cheap version): count this user's already-logged
+  // Anthropic calls in api_usage across two windows. Protects against a runaway
+  // client or leaked session hammering the coach and running up the bill.
+  // Reads own rows only (api_usage RLS select policy). Limits are far above any
+  // real day of coaching use — they only bite abuse.
+  const RL_PER_MIN = 30;   // burst ceiling
+  const RL_PER_DAY = 400;  // sustained-use ceiling
+  const nowMs = Date.now();
+  const overLimit = async (windowMs, max) => {
+    const { count } = await supabase
+      .from("api_usage")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .gte("created_at", new Date(nowMs - windowMs).toISOString());
+    return (count || 0) >= max;
+  };
+  if ((await overLimit(60_000, RL_PER_MIN)) || (await overLimit(86_400_000, RL_PER_DAY))) {
+    return NextResponse.json(
+      { error: { message: "You're sending requests too fast — give it a moment and try again." } },
+      { status: 429 }
+    );
+  }
+
   const body = await req.json();
   // `kind` is our own tag for usage logging — Anthropic must not receive it.
   const { kind, ...anthropicBody } = body;
