@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 
@@ -23,6 +24,8 @@ input:focus{border-color:var(--go);}
 .btn:disabled{opacity:.4;cursor:not-allowed;}
 .err{font-size:13px;color:var(--stop);margin-top:10px;line-height:1.4;}
 .ok{font-size:13px;color:var(--go);margin-top:10px;line-height:1.4;}
+.mutelink{display:inline-block;color:var(--muted);font-size:13px;text-decoration:none;}
+.mutelink:hover{color:var(--txt);}
 `;
 
 export default function LoginPage() {
@@ -36,6 +39,11 @@ export default function LoginPage() {
   const [ok, setOk] = useState("");
 
   const supabase = createClient();
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("reset") === "1") setOk("Password updated — log in with your new password.");
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -77,6 +85,9 @@ export default function LoginPage() {
               <div className="field"><label>Access code</label><input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="From your Stan Store purchase" required /></div>
             )}
             <button className="btn" type="submit" disabled={busy}>{busy ? "…" : mode === "login" ? "Log in" : "Create account"}</button>
+            {mode === "login" && (
+              <div style={{ textAlign: "center", marginTop: 14 }}><Link href="/forgot-password" className="mutelink">Forgot password?</Link></div>
+            )}
             {err && <div className="err">{err}</div>}
             {ok && <div className="ok">{ok}</div>}
           </form>
