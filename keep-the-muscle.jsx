@@ -11,7 +11,13 @@ const fallbackStore = {
 let _store = fallbackStore;
 export function setStore(s) { _store = s; }
 const store = { get: (k) => _store.get(k), set: (k, v) => _store.set(k, v) };
-const todayKey = () => new Date().toISOString().slice(0, 10);
+// Local calendar date (YYYY-MM-DD) — the "day" rolls over at the user's OWN midnight,
+// not UTC. new Date()'s getters use the device timezone, so this is correct per region
+// with no setup. (Was toISOString()/UTC, which reset the day mid-evening in the US.)
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const r5 = (n) => Math.round(n / 5) * 5;
 const r10 = (n) => Math.round(n / 10) * 10;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
