@@ -474,6 +474,42 @@ const blankDay = () => ({ date: todayKey(), cal: 0, protein: 0, carbs: 0, fat: 0
 // whether a rolled-over day gets a real grade or a gentler welcome-back.
 const dayHadActivity = (d) => !!d && (d.cal > 0 || d.lifted || (d.water || 0) > 0 || d.vitamin || (d.items && d.items.length > 0));
 
+// The Sunday that starts the current week — a stable id used to show the weekly recap
+// once per week (first app-open on/after Sunday, catches up if they miss Sunday).
+function weekIdNow() {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay()); // getDay(): 0 = Sunday
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Roll up the last 7 daily records — floor-first, matching KtM's philosophy (protect the
+// protein floor, don't under-eat). Gated to run once/week so the 7 reads aren't per-load.
+async function computeWeekly(profile, weightLogs, streak) {
+  const days = [];
+  const now = new Date();
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(now); d.setDate(now.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const rec = await store.get("ktm:today:" + key);
+    if (dayHadActivity(rec)) days.push(rec);
+  }
+  const logged = days.length;
+  const floorDays = days.filter((x) => (x.protein || 0) >= profile.proteinFloor).length;
+  const trainingDays = days.filter((x) => x.lifted).length;
+  const hydrationDays = days.filter((x) => (x.water || 0) >= profile.waterGoal * 0.85 && x.vitamin).length;
+  const avgProtein = logged ? Math.round(days.reduce((s, x) => s + (x.protein || 0), 0) / logged) : 0;
+  const weekAgo = new Date(now); weekAgo.setDate(now.getDate() - 8);
+  const inWeek = (weightLogs || []).filter((w) => new Date(w.date) >= weekAgo);
+  const weightChange = inWeek.length >= 2 ? Math.round((inWeek[inWeek.length - 1].lbs - inWeek[0].lbs) * 10) / 10 : null;
+  let coach;
+  if (!logged) coach = "No days logged this week — clean slate. Protect the floor tomorrow: protein first.";
+  else if (floorDays === logged && trainingDays >= 2) coach = "Floor held every day, training in — that's muscle protected. Exactly the plan.";
+  else if (floorDays < logged) coach = `${logged - floorDays} day${logged - floorDays === 1 ? "" : "s"} under the floor — that's where muscle slips. Floor first, every day.`;
+  else if (trainingDays < 2) coach = "Add 2–3 heavy sessions — training is the signal that tells your body to keep the muscle.";
+  else coach = "Solid week protecting the floor. Keep it steady.";
+  return { logged, floorDays, trainingDays, hydrationDays, avgProtein, proteinFloor: profile.proteinFloor, weightChange, streak, coach };
+}
+
 // Grade one day's record against the profile and the meta snapshot going into that day.
 //   finalize=true  → commits streak / protection-mode / history transitions (day rollover).
 //   finalize=false → read-only snapshot for the "Grade my day" check-in (no state changes).
@@ -632,11 +668,29 @@ export default function App({ store: injectedStore, onLogout } = {}) {
       setLastActiveDate(m.lastActiveDate || null);
       setFinalizedDate(m.finalizedDate || null);
 
+      // Weekly recap — once per week, first open on/after Sunday (catches up if missed).
+      let weeklyMsg = null;
+      try {
+        const wk = weekIdNow();
+        const shownWk = await store.get("ktm:weeklyShown");
+        if (p && shownWk !== wk) {
+          store.set("ktm:weeklyShown", wk);
+          const wd = await computeWeekly(p, m.weightLogs || [], m.streak || 0);
+          if (wd.logged >= 1) weeklyMsg = { role: "weekly", data: wd };
+        }
+      } catch {}
+
       if (t && t.date === todayStr) {
-        setToday(t);
-      } else if (seedForToday) {
-        // New calendar day with a recap to show: open a fresh panel led by the recap card.
-        const fresh = { ...blankDay(), messages: [seedForToday, { role: "c", text: "Fresh panel — new day. What do you need?" }] };
+        const base = weeklyMsg ? { ...t, messages: [...(t.messages || []), weeklyMsg] } : t;
+        setToday(base);
+        if (weeklyMsg) store.set("ktm:today:" + todayStr, base);
+      } else if (seedForToday || weeklyMsg) {
+        // New calendar day and/or a weekly recap: open a fresh panel led by the recap card(s).
+        const msgs = [];
+        if (seedForToday) msgs.push(seedForToday);
+        if (weeklyMsg) msgs.push(weeklyMsg);
+        msgs.push({ role: "c", text: "Fresh panel — new day. What do you need?" });
+        const fresh = { ...blankDay(), messages: msgs };
         setToday(fresh);
         store.set("ktm:today:" + todayStr, fresh);
         const nm = { ...m, lastActiveDate: todayStr };
@@ -952,6 +1006,13 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
 
   const push = (m, t) => { const nt = { ...t, messages: [...(t.messages || []), m] }; saveToday(nt); return nt; };
 
+  // Manual weekly recap (the Sunday auto-version fires on load; this pulls it up anytime).
+  const showWeekly = async () => {
+    if (busy) return;
+    const data = await computeWeekly(profile, weightLogs, streak);
+    push({ role: "weekly", data }, today);
+  };
+
   const histFrom = (t, dropLast) => {
     let arr = (t.messages || []).slice(0, dropLast ? -1 : undefined)
       .filter((m) => m.role === "u" || m.role === "c")
@@ -1166,7 +1227,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
       )}
 
       <div className="scroll" ref={scrollRef}>
-        {msgs.map((m, i) => m.role === "score" ? <ScoreCard key={i} d={m.data} fix={m.fix} /> : (
+        {msgs.map((m, i) => m.role === "weekly" ? <WeeklyRecap key={i} d={m.data} /> : m.role === "score" ? <ScoreCard key={i} d={m.data} fix={m.fix} /> : (
           <div className={`msg ${m.role}`} key={i}>
             <div className="bub">
               {m.img && <img src={m.img} alt="meal" style={{ maxWidth: "180px", width: "100%", borderRadius: 10, display: "block", marginBottom: m.text ? 8 : 0 }} />}
@@ -1187,6 +1248,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
             <button onClick={undoLast} disabled={busy} style={{ borderColor: "var(--hold)", color: "var(--hold)" }}>↩ Undo last log</button>
           )}
           <button onClick={gradeToday} disabled={busy} style={{ borderColor: "var(--go)", color: "var(--go)" }}>Grade my day</button>
+          <button onClick={showWeekly} disabled={busy} style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>📅 Weekly recap</button>
           {["Eat this now", "Meal plan", "Give me a workout", "GI help", "Check in"].map((q) => (
             <button key={q} onClick={() => send(q)} disabled={busy}>{q}</button>
           ))}
@@ -1747,6 +1809,25 @@ function ScoreCard({ d, fix }) {
         {d.inProtectionMode && <Row lab="Muscle Protection Mode" v={`🛡️ ${d.protectionDaysLeft} clean day${d.protectionDaysLeft === 1 ? "" : "s"} left`} color="var(--stop)" />}
       </div>
       <div style={{ marginTop: 10, color: (d.compositionConcern || d.inProtectionMode) ? "var(--stop)" : "var(--hold)", fontWeight: 600, fontSize: 14 }}>🛡️ {fix}</div>
+    </div></div>
+  );
+}
+
+function WeeklyRecap({ d }) {
+  const Row = ({ lab, v, color }) => <div className="sl2"><span>{lab}</span><span style={color ? { color, fontWeight: 700 } : {}}>{v}</span></div>;
+  const floorPct = d.logged ? d.floorDays / d.logged : 0;
+  return (
+    <div className="msg c"><div className="bub" style={{ width: "100%", maxWidth: "100%" }}>
+      <div className="sg" style={{ fontWeight: 600, letterSpacing: ".1em", marginBottom: 8 }}>📅 YOUR WEEK</div>
+      <div className="scorecard">
+        <Row lab="Floor protected" v={`${d.floorDays}/${d.logged} days`} color={floorPct >= 0.85 ? "var(--go)" : floorPct >= 0.5 ? "var(--hold)" : "var(--stop)"} />
+        <Row lab="Avg protein" v={`${d.avgProtein}g · floor ${d.proteinFloor}g`} color={d.avgProtein >= d.proteinFloor ? "var(--go)" : "var(--stop)"} />
+        <Row lab="Trained heavy" v={`💪 ${d.trainingDays} day${d.trainingDays === 1 ? "" : "s"}`} color={d.trainingDays >= 2 ? "var(--go)" : "var(--hold)"} />
+        <Row lab="Hydration" v={`💧 ${d.hydrationDays}/${d.logged}`} color={d.hydrationDays >= d.logged * 0.7 ? "var(--go)" : "var(--hold)"} />
+        {d.weightChange !== null && <Row lab="Weight" v={d.weightChange < 0 ? `↓${Math.abs(d.weightChange)} lb` : d.weightChange > 0 ? `↑${d.weightChange} lb` : "— lb"} color="var(--txt)" />}
+        <Row lab="Streak" v={`🔥 ${d.streak}`} color="var(--go)" />
+      </div>
+      <div style={{ marginTop: 10, color: "var(--hold)", fontWeight: 600, fontSize: 14 }}>🛡️ {d.coach}</div>
     </div></div>
   );
 }
