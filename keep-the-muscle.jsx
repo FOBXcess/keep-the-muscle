@@ -964,7 +964,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   const callCoach = async (apiMessages, t) => {
     const res = await fetch("/api/coach", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "coach", model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt(profile, t, { protectionDaysLeft, trainHistory }), messages: apiMessages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
+      body: JSON.stringify({ kind: "coach", model: "claude-sonnet-4-6", max_tokens: 2000, system: systemPrompt(profile, t, { protectionDaysLeft, trainHistory }), messages: apiMessages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
     });
     if (!res.ok) {
       let detail = "";
@@ -989,8 +989,9 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
           try { parsed = JSON.parse(matches[i]); } catch (e2) {}
         }
       }
-      // Last resort: never show raw JSON/markdown to the user — show a clean generic line instead.
-      if (!parsed) parsed = { reply: "Logged. Check your numbers above.", logs: [] };
+      // Last resort: the response didn't parse (usually a truncated/empty reply). NEVER claim
+      // it logged — that silently drops the food and lies. Tell the user plainly so they re-send.
+      if (!parsed) parsed = { reply: "⚠️ I didn't catch that one clearly — nothing was logged. Re-send what you ate and I'll get it.", logs: [] };
     }
     const logs = Array.isArray(parsed.logs) ? parsed.logs : (parsed.log ? [parsed.log] : []);
     let nt = { ...t };
@@ -1293,7 +1294,7 @@ function ScanModal({ profile, today, onClose, onLog, systemPromptFn }) {
     try {
       const res = await fetch("/api/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "scan", model: "claude-sonnet-4-6", max_tokens: 1000, system: sys, messages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
+        body: JSON.stringify({ kind: "scan", model: "claude-sonnet-4-6", max_tokens: 2000, system: sys, messages, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] }),
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
