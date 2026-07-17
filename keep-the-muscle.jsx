@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { toPng } from "html-to-image";
 
 /* ---------------- persistence ---------------- */
 // store is injected via props from AppShell (Supabase-backed).
@@ -289,7 +290,7 @@ RESPONSE SCHEMA — ONE valid JSON object, nothing else:
 }
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 :root{--ink:#15120E;--raise:#211C16;--card:#28221B;--line:#3A322A;--txt:#F6F1E7;--muted:#A99F8E;--faint:#6F665A;
 --go:#8BE05A;--hold:#F2B33D;--stop:#F0604D;--water:#56C7F0;--carb:#C79BF2;--fat:#F2A65A;--gold:#D4AF37;}
 *{box-sizing:border-box;}
@@ -466,7 +467,26 @@ label.fl{display:block;font-size:13px;color:var(--muted);margin:16px 0 7px;font-
 .share-btn:hover{background:rgba(232,180,74,.2);}
 .share-btn:disabled{opacity:.5;cursor:not-allowed;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+/* ---- shareable weekly poster ---- */
+.sc-anton{font-family:'Anton','Oswald','Arial Narrow','Helvetica Neue',Impact,sans-serif;font-weight:400;line-height:.9;}
+.sc-osw{font-family:'Oswald','Arial Narrow','Helvetica Neue',sans-serif;}
+.sc-card{position:relative;overflow:hidden;color:#F7F5F0;background:radial-gradient(130% 90% at 50% -10%,#15110B 0%,#0B0A07 55%,#070806 100%);border:2px solid #6E5A22;box-shadow:0 0 0 1px rgba(244,185,54,.22),0 0 60px rgba(244,185,54,.10);}
+.sc-macro{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#111009;border:1.5px solid #3A3322;}
+.sc-sizes{display:flex;gap:8px;margin-top:14px;}
+.sc-size-btn{flex:1;padding:9px;border-radius:10px;border:1.5px solid var(--line);background:var(--raise);color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+.sc-size-btn.on{border-color:var(--gold);color:var(--gold);background:rgba(212,175,55,.12);}
+.sc-actions-row{display:flex;gap:8px;margin-top:10px;}
+.sc-act{flex:1;padding:13px 10px;border-radius:12px;border:1.5px solid var(--gold);background:rgba(212,175,55,.12);color:var(--gold);font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit;}
+.sc-act.plain{border-color:var(--line);color:var(--muted);background:var(--raise);}
+.sc-act:disabled{opacity:.5;cursor:not-allowed;}
 `;
+
+const SC_SIZES = {
+  story:  { key: "story",  label: "Story / Reel",  w: 1080, h: 1920 },
+  feed:   { key: "feed",   label: "IG Post 4:5",   w: 1080, h: 1350 },
+  square: { key: "square", label: "Grid 1:1",      w: 1080, h: 1080 },
+};
+const SC = { bg: "#070806", green: "#86EB45", gold: "#F4B936", white: "#F7F5F0", muted: "#9A9389" };
 
 const blankDay = () => ({ date: todayKey(), cal: 0, protein: 0, carbs: 0, fat: 0, water: 0, lifted: false, vitamin: false, items: [], messages: [] });
 
@@ -1813,9 +1833,86 @@ function ScoreCard({ d, fix }) {
   );
 }
 
+// Shareable weekly poster (gold-on-black), floor-first for KtM.
+const WeeklyShareCard = React.forwardRef(function WeeklyShareCard({ d, sizeKey }, ref) {
+  const S = SC_SIZES[sizeKey] || SC_SIZES.story;
+  const pct = d.logged ? d.floorDays / d.logged : 0;
+  const v = pct >= 0.85 ? { h: "FLOOR HELD", c: SC.green } : pct >= 0.5 ? { h: "HOLDING", c: SC.gold } : { h: "FLOOR FIRST", c: "#FF7A45" };
+  const D = {
+    story:  { padX: 96, padY: 92, brand: 30, verdict: 150, hero: 240, heroLbl: 30, tileNum: 60, tileLbl: 21, coach: 42, foot: 26, gap: 34 },
+    feed:   { padX: 84, padY: 74, brand: 28, verdict: 126, hero: 200, heroLbl: 27, tileNum: 54, tileLbl: 19, coach: 38, foot: 24, gap: 26 },
+    square: { padX: 74, padY: 60, brand: 26, verdict: 100, hero: 160, heroLbl: 24, tileNum: 46, tileLbl: 18, coach: 33, foot: 22, gap: 18 },
+  }[S.key];
+  const tiles = [
+    { lab: "AVG PROTEIN", val: `${d.avgProtein}g`, color: SC.green },
+    { lab: "TRAINED", val: `${d.trainingDays}`, color: SC.white },
+    ...(d.weightChange !== null ? [{ lab: "WEIGHT", val: d.weightChange < 0 ? `↓${Math.abs(d.weightChange)}` : d.weightChange > 0 ? `↑${d.weightChange}` : "—", color: SC.white }] : []),
+    { lab: "STREAK", val: `${d.streak}`, color: SC.gold },
+  ];
+  return (
+    <div ref={ref} className="sc-card" style={{ width: S.w, height: S.h, borderRadius: 46, padding: `${D.padY}px ${D.padX}px`, display: "flex", flexDirection: "column", whiteSpace: "normal" }}>
+      <div className="sc-osw" style={{ textAlign: "center", color: SC.gold, fontWeight: 700, fontSize: D.brand, letterSpacing: ".18em", textTransform: "uppercase", whiteSpace: "nowrap" }}>Keep the Muscle</div>
+      <div className="sc-anton" style={{ textAlign: "center", color: v.c, fontSize: D.verdict, textTransform: "uppercase", marginTop: D.gap * 0.5, textShadow: `0 0 40px ${v.c}44` }}>{v.h}</div>
+      <div className="sc-osw" style={{ textAlign: "center", color: SC.muted, fontSize: D.foot * 1.1, fontWeight: 700, letterSpacing: ".22em", textTransform: "uppercase", marginTop: 6 }}>Your Week</div>
+      <div style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 0 }}>
+        <div className="sc-anton" style={{ color: v.c, fontSize: D.hero, lineHeight: 1, textShadow: `0 0 50px ${v.c}55` }}>{d.floorDays}<span style={{ color: SC.muted, fontSize: D.hero * 0.5 }}>/{d.logged}</span></div>
+        <div className="sc-osw" style={{ color: SC.white, fontSize: D.heroLbl, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", marginTop: 4 }}>Days floor held</div>
+      </div>
+      <div style={{ display: "flex", gap: 16 }}>
+        {tiles.map((t) => (
+          <div key={t.lab} className="sc-macro" style={{ flex: 1, height: Math.round(D.tileNum * 2.2), borderRadius: 20 }}>
+            <div className="sc-osw" style={{ color: t.color, fontWeight: 700, fontSize: D.tileNum, lineHeight: 1 }}>{t.val}</div>
+            <div className="sc-osw" style={{ color: SC.muted, fontWeight: 600, fontSize: D.tileLbl, letterSpacing: ".08em", marginTop: 8 }}>{t.lab}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ textAlign: "center", color: SC.white, fontWeight: 700, fontSize: D.coach, lineHeight: 1.25, marginTop: D.gap, padding: "0 6px" }}>{d.coach}</div>
+      <div style={{ textAlign: "center", marginTop: "auto", paddingTop: D.gap }}>
+        <div style={{ color: SC.muted, fontSize: D.foot, fontWeight: 600 }}>🛡️ Keep the Muscle</div>
+        <div className="sc-osw" style={{ color: SC.gold, fontSize: D.foot * 1.18, fontWeight: 700, marginTop: 6 }}>Protect the floor → musclemindset.app</div>
+      </div>
+    </div>
+  );
+});
+
 function WeeklyRecap({ d }) {
   const Row = ({ lab, v, color }) => <div className="sl2"><span>{lab}</span><span style={color ? { color, fontWeight: 700 } : {}}>{v}</span></div>;
   const floorPct = d.logged ? d.floorDays / d.logged : 0;
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareSize, setShareSize] = useState("story");
+  const [sharing, setSharing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const cardRef = useRef(null);
+
+  const isMobileUA = () => typeof navigator !== "undefined" && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const renderBlob = async () => {
+    const node = cardRef.current; if (!node) return null;
+    try { if (document.fonts?.ready) await document.fonts.ready; } catch {}
+    const S = SC_SIZES[shareSize];
+    const opts = { pixelRatio: 2, cacheBust: true, backgroundColor: SC.bg, width: S.w, height: S.h };
+    try { await toPng(node, opts); } catch {}
+    return await (await fetch(await toPng(node, opts))).blob();
+  };
+  const caption = () => [
+    "My week on Keep the Muscle 🛡️",
+    `Floor held ${d.floorDays}/${d.logged} days · ${d.avgProtein}g avg protein · ${d.trainingDays} training days · 🔥${d.streak} streak`,
+    "", d.coach, "",
+    "Protect the floor → musclemindset.app",
+    "#keepthemuscle #glp1 #proteinfloor",
+  ].join("\n");
+  const exportCard = async (withCaption) => {
+    if (sharing) return; setSharing(true);
+    try {
+      const blob = await renderBlob(); if (!blob) throw new Error("no blob");
+      const file = new File([blob], `keep-the-muscle-week-${shareSize}.png`, { type: "image/png" });
+      const canShareFiles = typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] });
+      if (canShareFiles && (withCaption || isMobileUA())) await navigator.share({ files: [file], ...(withCaption ? { text: caption() } : {}) });
+      else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 5000); }
+    } catch (e) { if (!(e && e.name === "AbortError")) alert("Couldn't create the image. On iPhone use 📤 Share → Save Image; otherwise try a screenshot."); }
+    setSharing(false);
+  };
+  const copyCap = async () => { try { await navigator.clipboard.writeText(caption()); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { alert("Couldn't copy — long-press to copy manually."); } };
+
   return (
     <div className="msg c"><div className="bub" style={{ width: "100%", maxWidth: "100%" }}>
       <div className="sg" style={{ fontWeight: 600, letterSpacing: ".1em", marginBottom: 8 }}>📅 YOUR WEEK</div>
@@ -1828,6 +1925,29 @@ function WeeklyRecap({ d }) {
         <Row lab="Streak" v={`🔥 ${d.streak}`} color="var(--go)" />
       </div>
       <div style={{ marginTop: 10, color: "var(--hold)", fontWeight: 600, fontSize: 14 }}>🛡️ {d.coach}</div>
+      <button className="share-btn" onClick={() => setShareOpen((o) => !o)} style={{ marginTop: 12 }}>{shareOpen ? "Hide share" : "📤 Share my week"}</button>
+      {shareOpen && (() => {
+        const previewW = 300; const S = SC_SIZES[shareSize]; const scale = previewW / S.w;
+        return (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ width: previewW, height: Math.round(S.h * scale), margin: "0 auto", overflow: "hidden", borderRadius: 20 }}>
+              <div style={{ width: S.w, height: S.h, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+                <WeeklyShareCard ref={cardRef} d={d} sizeKey={shareSize} />
+              </div>
+            </div>
+            <div className="sc-sizes">
+              {Object.values(SC_SIZES).map((s) => (
+                <button key={s.key} className={`sc-size-btn${shareSize === s.key ? " on" : ""}`} onClick={() => setShareSize(s.key)}>{s.label}</button>
+              ))}
+            </div>
+            <div className="sc-actions-row">
+              <button className="sc-act" onClick={() => exportCard(false)} disabled={sharing}>{sharing ? "⏳…" : "📥 Save"}</button>
+              <button className="sc-act" onClick={() => exportCard(true)} disabled={sharing}>📤 Share</button>
+              <button className="sc-act plain" onClick={copyCap}>{copied ? "✓ Copied" : "📋 Caption"}</button>
+            </div>
+          </div>
+        );
+      })()}
     </div></div>
   );
 }
