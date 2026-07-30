@@ -241,7 +241,7 @@ CRITICAL OUTPUT RULE: your entire response must be ONE valid JSON object and NOT
   const volatilePrompt = `TODAY SO FAR: ${t.cal} cal (${left(p.calories, t.cal)} to go), ${t.protein}g protein (${left(p.protein, t.protein)}g to go), ${t.water || 0}oz water. Minerals today: ${t.vitamin ? "taken" : "not yet"}. Resistance training today: ${t.lifted ? "done" : "not yet"}.`;
 
   return [
-    { type: "text", text: staticPrompt, cache_control: { type: "ephemeral" } },
+    { type: "text", text: staticPrompt, cache_control: { type: "ephemeral", ttl: "1h" } },
     { type: "text", text: volatilePrompt },
   ];
 }
@@ -252,17 +252,17 @@ CRITICAL OUTPUT RULE: your entire response must be ONE valid JSON object and NOT
    no seed-oil framework, and the real question is protein-per-bite and whether it's
    actually getting them over the protein floor, not whether it "fits" a ceiling. */
 function scanSystemPrompt(p, t) {
-  const calLeft = Math.max(0, p.calories - t.cal);
   const proteinFloor = p.proteinFloor != null ? p.proteinFloor : Math.round(p.protein * 0.70);
   const floorLeft = Math.max(0, proteinFloor - t.protein);
   const targetLeft = Math.max(0, p.protein - t.protein);
-  return `You are the Muscle Mindset — Keep the Muscle coach doing a PRE-EAT SCAN — a preview verdict, NOT a food log. The user is thinking about eating something and wants to know if it's a good move RIGHT NOW before they commit.
+
+  // Static block: byte-identical across a user's scan session, so consecutive scans read this
+  // ~1.4k-token ruleset from cache instead of re-billing it. Live day numbers → `context`.
+  const rules = `You are the Muscle Mindset — Keep the Muscle coach doing a PRE-EAT SCAN — a preview verdict, NOT a food log. The user is thinking about eating something and wants to know if it's a good move RIGHT NOW before they commit.
 
 DO NOT LOG THIS FOOD. Return "logs": [] always. This is a preview only.
 
-USER'S DAY SO FAR: ${t.cal} cal eaten, ${t.protein}g protein (${floorLeft > 0 ? floorLeft + "g under the protein FLOOR — this is the line that protects muscle, get over it first" : targetLeft > 0 ? "floor cleared ✅ — " + targetLeft + "g more to hit the target" : "target hit ✅"}), water: ${t.water || 0}/${p.waterGoal}oz.
-USER TARGETS: calories ${p.calories} (maintenance for goal weight, not a cap), protein FLOOR ${proteinFloor}g / TARGET ${p.protein}g, ${p.carbs}g carbs, ${p.fat}g fat. Appetite lately: ${p.appetite}.
-Remember: calories are maintenance for their goal body, not a ceiling — there is no "over budget" state to warn about here. Protect the protein floor, don't chase the deficit. The only thing worth flagging is whether this food meaningfully helps close the protein gap (floor first, then target), especially given appetite is the bottleneck, not calories.
+The user's live day context (protein floor/target progress, water) is in the next section — read it before deciding the verdict.
 
 SCAN RULES:
 1. IDENTIFY the food from the photo or description. Use web search for any branded/restaurant item to get real macros. For a generic meal, estimate accurately.
@@ -287,6 +287,15 @@ SCAN RULES:
 
 RESPONSE SCHEMA — ONE valid JSON object, nothing else:
 {"reply":"<2-3 sentence verdict + context>","preview":{"name":"<food name>","cal":<int>,"protein":<int>,"carbs":<int>,"fat":<int>,"verdict":"good"|"caution"|"bad","cardVerdict":"elite"|"muscle"|"protein_trap"|"calorie_trap","foodIQ":<int 0-100>,"swap":"<specific swap or empty string if good>","contextLine":"<one sentence on how this fits their day right now>","realityCheck":"<one short undeniable punch, ideally the card's own macros>","lesson":"<one short teaching takeaway>"},"logs":[]}`;
+
+  const context = `USER'S DAY SO FAR: ${t.cal} cal eaten, ${t.protein}g protein (${floorLeft > 0 ? floorLeft + "g under the protein FLOOR — this is the line that protects muscle, get over it first" : targetLeft > 0 ? "floor cleared ✅ — " + targetLeft + "g more to hit the target" : "target hit ✅"}), water: ${t.water || 0}/${p.waterGoal}oz.
+USER TARGETS: calories ${p.calories} (maintenance for goal weight, not a cap), protein FLOOR ${proteinFloor}g / TARGET ${p.protein}g, ${p.carbs}g carbs, ${p.fat}g fat. Appetite lately: ${p.appetite}.
+Remember: calories are maintenance for their goal body, not a ceiling — there is no "over budget" state to warn about here. Protect the protein floor, don't chase the deficit. The only thing worth flagging is whether this food meaningfully helps close the protein gap (floor first, then target), especially given appetite is the bottleneck, not calories.`;
+
+  return [
+    { type: "text", text: rules, cache_control: { type: "ephemeral", ttl: "1h" } },
+    { type: "text", text: context },
+  ];
 }
 
 const CSS = `
