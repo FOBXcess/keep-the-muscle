@@ -1,6 +1,6 @@
 ---
 name: one-take-every-move
-description: Transform raw talking-head videos into premium motion-graphics edits with kinetic camera whips and synced typography. Trigger this skill whenever the user asks to "add camera moves", "make this cinematic", "polish this video", "run one-take-every-move", or wants to turn a single take into a dynamic edit. Handles the complete workflow: recording setup guidance, /kinetic-multicam prompt generation (transcription + camera planning + super timing), and Seedance 2.0 Fast generation. Works on any video length and any language. No multi-camera setup, no editing skills, no keyframes needed.
+description: 'Transform raw talking-head videos into premium motion-graphics edits with kinetic camera whips and synced typography. Trigger this skill whenever the user asks to "add camera moves", "make this cinematic", "polish this video", "run one-take-every-move", or wants to turn a single take into a dynamic edit. Handles the complete workflow — recording setup guidance, /kinetic-multicam prompt generation (transcription + camera planning + super timing), and Seedance 2.0 Fast generation. Works on any video length and any language. No multi-camera setup, no editing skills, no keyframes needed.'
 compatibility: Claude Code with /kinetic-multicam skill, Seedance 2.0 Fast, video input files
 ---
 
