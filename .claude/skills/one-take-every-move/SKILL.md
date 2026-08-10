@@ -88,6 +88,25 @@ Generation takes a few minutes. When it's done, you'll have your polished video 
 
 ---
 
+## Worked Example
+
+Here's a single hook take run through the workflow, so you can see how the pieces line up. The speaker recorded one static phone shot in their room. `/kinetic-multicam` split the take into three camera blocks at phrase boundaries and pulled a super from the exact words spoken in each block:
+
+| Block | Camera move | Super (from the spoken words) | Placement |
+|-------|-------------|-------------------------------|-----------|
+| 1 | Punch-in close-up | **"EASIEST WAY"** — lands on the whip | Open frame |
+| 2 | Left orbit | **"PREMIUM EDIT"** | Layered behind the speaker's body |
+| 3 | Wide room reveal | **"WITHOUT SETUP"** — as the camera pulls out | Open frame |
+
+Notice the pattern:
+- **The super is always cut from what was actually said** in that block — never invented copy. The typography reinforces the spoken beat rather than competing with it.
+- **The text lands *with* the whip**, not before or after. The motion and the word hit the same frame, which is what makes it feel synced.
+- **Placement stays off the face** — open frame during the wide/close shots, behind the body during the orbit. The face, hoodie, posters, mic, and lighting all stay identically preserved; only the moves and the type are added.
+
+When you review the `/kinetic-multicam` plan, you're checking exactly these three things per block: which move, which word, and where the word sits. If any of them feels off, that's the moment to ask Claude to adjust before finalizing the prompt.
+
+---
+
 ## What Stays the Same vs. What Changes
 
 ### Preserved (Untouched)
