@@ -171,12 +171,39 @@ function makeStore(supabase, userId) {
   };
 }
 
+// Food ratings ("how did it sit with you?"). Rows are private to the member; only combined totals are ever shared,
+// through the food_rating_summary() database function (see supabase-food-ratings.sql).
+function makeRatings(supabase, userId) {
+  return {
+    // Ratings from the last day, so foods already rated are not asked about again. A failure just means "none known".
+    async listRecent() {
+      const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const { data, error } = await supabase.from("food_ratings").select("food_key,eaten_at").gte("eaten_at", since);
+      return error ? [] : data || [];
+    },
+    // One rating per person per meal; saving the same meal again just updates it.
+    async save(v) {
+      const { error } = await supabase.from("food_ratings").upsert({
+        user_id: userId,
+        food_key: v.foodKey,
+        food_name: v.name,
+        eaten_at: v.at,
+        fullness: v.fullness,
+        comfort: v.comfort,
+        days_since_dose: v.daysSinceDose == null ? null : v.daysSinceDose,
+      }, { onConflict: "user_id,food_key,eaten_at" });
+      return error ? { ok: false, error: error.message } : { ok: true };
+    },
+  };
+}
+
 export default function AppShell({ userId }) {
   const supabase = createClient();
   const store = useMemo(() => makeStore(supabase, userId), [userId]);
+  const ratings = useMemo(() => makeRatings(supabase, userId), [userId]);
   const onLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/login";
   };
-  return <KTMApp store={store} onLogout={onLogout} />;
+  return <KTMApp store={store} ratings={ratings} onLogout={onLogout} />;
 }

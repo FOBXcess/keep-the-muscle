@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { FULLNESS, COMFORT, MIN_RATERS, PROMPT_OPENS_MIN, PROMPT_CLOSES_MIN, MAX_OPEN_PROMPTS, PRIOR_STRENGTH, foodKey, ratingKey, ratingPrompts, validateRating, interpretSummary, blendEase } from "../lib/food-ratings.js";
+import { FULLNESS, COMFORT, MIN_RATERS, PROMPT_OPENS_MIN, PROMPT_CLOSES_MIN, MAX_OPEN_PROMPTS, PRIOR_STRENGTH, foodKey, ratingKey, ratedKeyFromRow, ratingPrompts, validateRating, interpretSummary, blendEase } from "../lib/food-ratings.js";
 import { easeProfile, lowAppetiteScore } from "../lib/food-ease.js";
 
 const NOW = Date.parse("2026-11-01T18:00:00Z");
@@ -53,6 +53,16 @@ test("ratingPrompts: works with the exact timestamp format the app now stamps on
   assert.equal(out.length, 1);
   assert.equal(out[0].minutesAgo, 61);
   assert.equal(validateRating({ name: "Greek yogurt", at: stamped, fullness: "just_right", comfort: "easy" }).value.at, stamped);
+});
+
+test("a saved row matches its logged item even though the database writes the time differently", () => {
+  const item = { name: "Greek Yogurt!", at: "2026-11-01T16:00:00.000Z" };
+  const row = { food_key: "greek yogurt", eaten_at: "2026-11-01T16:00:00+00:00" };            // how Postgres returns it
+  const rowOffset = { food_key: "greek yogurt", eaten_at: "2026-11-01T09:00:00-07:00" };      // the same instant in another zone
+  assert.equal(ratedKeyFromRow(row), ratingKey(item));
+  assert.equal(ratedKeyFromRow(rowOffset), ratingKey(item));
+  assert.notEqual(ratedKeyFromRow({ ...row, eaten_at: "2026-11-01T16:00:01+00:00" }), ratingKey(item)); // a different moment stays different
+  assert.equal(ratingPrompts([{ ...item, at: new Date(NOW - 90 * 60000).toISOString() }], [ratedKeyFromRow({ food_key: "greek yogurt", eaten_at: new Date(NOW - 90 * 60000).toISOString().replace("Z", "+00:00") })], NOW).length, 0);
 });
 
 test("ratingPrompts: items logged before timestamps existed are never asked about", () => {

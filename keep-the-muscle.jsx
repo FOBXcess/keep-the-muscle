@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { toPng } from "html-to-image";
+import RatingPrompt from "./components/RatingPrompt";
 
 /* ---------------- persistence ---------------- */
 // store is injected via props from AppShell (Supabase-backed).
@@ -638,7 +639,7 @@ function gradeDay(day, profile, meta, finalize) {
   return { data, fix, newMeta };
 }
 
-export default function App({ store: injectedStore, onLogout } = {}) {
+export default function App({ store: injectedStore, ratings, onLogout } = {}) {
   if (injectedStore) _store = injectedStore;
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -816,7 +817,7 @@ export default function App({ store: injectedStore, onLogout } = {}) {
     </div>
   );
 
-  return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, onLogout, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
+  return <Coach {...{ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, onLogout, ratings, resetProfile: () => { setProfile(null); store.set("ktm:profile", null); } }} />;
 }
 
 /* ---------------- GOAL-WEIGHT BACKFILL (gate for pre-rewrite users) ---------------- */
@@ -900,7 +901,7 @@ function Onboarding({ onDone }) {
 }
 
 /* ---------------- COACH (pinned dash + chat) ---------------- */
-function Coach({ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile, onLogout }) {
+function Coach({ profile, today, saveToday, streak, underEatDays, protectionDaysLeft, trainHistory, waterHistory, vitaminHistory, weightLogs, saveMeta, logWeight, clearToday, undoLast, favorites, recordFavorites, resetProfile, onLogout, ratings }) {
   const [input, setInput] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [expandedTile, setExpandedTile] = useState(null);
@@ -1270,6 +1271,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
           </div>
         ))}
         {dayGrade && <ScoreCard d={dayGrade.data} fix={dayGrade.fix} />}
+        <RatingPrompt items={today.items} ratings={ratings} />
         {busy && <div className="msg c"><div className="bub" style={{ color: "var(--muted)" }}>…</div></div>}
       </div>
 
