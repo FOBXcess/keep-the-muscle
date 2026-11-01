@@ -47,6 +47,14 @@ test("ratingPrompts: skips foods already rated, matched by food AND time", () =>
   assert.equal(ratingPrompts([a], [ratingKey(a)], NOW).length, 0); // an array works too
 });
 
+test("ratingPrompts: works with the exact timestamp format the app now stamps on logged foods", () => {
+  const stamped = new Date(NOW - 61 * 60000).toISOString(); // same call keep-the-muscle.jsx makes: new Date().toISOString()
+  const out = ratingPrompts([{ name: "Greek yogurt", cal: 100, protein: 17, carbs: 6, fat: 0, verdict: "good", at: stamped }], new Set(), NOW);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].minutesAgo, 61);
+  assert.equal(validateRating({ name: "Greek yogurt", at: stamped, fullness: "just_right", comfort: "easy" }).value.at, stamped);
+});
+
 test("ratingPrompts: items logged before timestamps existed are never asked about", () => {
   const out = ratingPrompts([{ name: "old log", cal: 100 }, { name: "bad time", at: "yesterday-ish" }, { name: "empty", at: "" }], new Set(), NOW);
   assert.deepEqual(out, []);

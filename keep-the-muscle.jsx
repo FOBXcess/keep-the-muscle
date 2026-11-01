@@ -1022,7 +1022,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
   // no AI call, no estimate, so it can't invent a portion. Accuracy is preserved by construction.
   const quickLog = (f) => {
     if (busy) return;
-    const l = { name: f.name, cal: f.cal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fat: f.fat || 0, verdict: f.verdict || null };
+    const l = { name: f.name, cal: f.cal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fat: f.fat || 0, verdict: f.verdict || null, at: new Date().toISOString() };
     const nt = {
       ...today,
       cal: today.cal + l.cal, protein: today.protein + l.protein, carbs: today.carbs + l.carbs, fat: today.fat + l.fat,
@@ -1093,9 +1093,12 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
     // a meal that's actually dominated by something bad still correctly comes out bad.
     const rank = { good: 1, caution: 2, bad: 3 };
     let weightedScore = 0, verdictWeight = 0;
+    // One time for everything in this message (one meal). Stamped here, not taken from the model's reply, so the
+    // "how did it sit with you?" prompt can tell when an hour has passed.
+    const loggedAt = new Date().toISOString();
     for (const l of logs) {
       if (!l || (!l.cal && !l.protein)) continue;
-      nt = { ...nt, cal: nt.cal + (l.cal || 0), protein: nt.protein + (l.protein || 0), carbs: nt.carbs + (l.carbs || 0), fat: nt.fat + (l.fat || 0), items: [...nt.items, l] };
+      nt = { ...nt, cal: nt.cal + (l.cal || 0), protein: nt.protein + (l.protein || 0), carbs: nt.carbs + (l.carbs || 0), fat: nt.fat + (l.fat || 0), items: [...nt.items, { ...l, at: loggedAt }] };
       addedCal += l.cal || 0; addedProtein += l.protein || 0;
       if (l.verdict && rank[l.verdict]) {
         const weight = Math.max(l.cal || 0, 1);
@@ -1303,7 +1306,7 @@ function Coach({ profile, today, saveToday, streak, underEatDays, protectionDays
           today={today}
           onClose={() => setScanOpen(false)}
           onLog={(preview) => {
-            const l = { name: preview.name, cal: preview.cal, protein: preview.protein, carbs: preview.carbs, fat: preview.fat, verdict: preview.verdict };
+            const l = { name: preview.name, cal: preview.cal, protein: preview.protein, carbs: preview.carbs, fat: preview.fat, verdict: preview.verdict, at: new Date().toISOString() };
             const nt = {
               ...today,
               cal: today.cal + (l.cal || 0), protein: today.protein + (l.protein || 0),
